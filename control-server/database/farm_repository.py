@@ -1,8 +1,12 @@
 """
 farm_repository.py
 ==================
-farm_nodes 테이블과 통신하는 데이터 접근 계층(Repository).
+farm_nodes / seedling_varieties 테이블과 통신하는 데이터 접근 계층(Repository).
 DatabaseManager를 주입받아 SQL 쿼리를 실행한다.
+
+참조 스키마: docs/DB_SCHEMA.md § 2. 농장 구역 및 품종
+  - farm_nodes.node_id : VARCHAR(50) – PK
+  - seedling_varieties.variety_id : INT – PK
 """
 
 from database.db_manager import DatabaseManager
@@ -47,12 +51,12 @@ class FarmRepository:
         return result
 
     # ──────────── 특정 노드 상태 조회 ────────────
-    def get_node_by_id(self, node_id: int) -> dict | None:
+    def get_node_by_id(self, node_id: str) -> dict | None:
         """
         특정 노드 ID에 해당하는 노드 정보를 조회한다.
 
         Args:
-            node_id : 조회할 노드 ID
+            node_id : 조회할 노드 ID (VARCHAR(50), 예: 'NODE-A1-001')
 
         Returns:
             노드 정보 딕셔너리 또는 None
@@ -65,70 +69,71 @@ class FarmRepository:
         return None
 
     # ──────────── 노드 환경 데이터 업데이트 ────────────
-    def update_node_environment(self, node_id: int, temperature: float, humidity: float) -> bool:
+    def update_node_quantity(self, node_id: str, quantity: int) -> bool:
         """
-        특정 노드의 현재 온도/습도 값을 업데이트한다.
+        특정 노드의 현재 적재 수량을 업데이트한다.
 
         Args:
-            node_id     : 업데이트할 노드 ID
-            temperature : 현재 온도 (°C)
-            humidity    : 현재 습도 (%)
+            node_id  : 업데이트할 노드 ID (VARCHAR(50))
+            quantity : 변경할 적재 수량
 
         Returns:
             업데이트 성공 여부 (True/False)
         """
-        # TODO: 실제 테이블 컬럼명에 맞게 쿼리를 수정할 것
         query = """
             UPDATE farm_nodes
-            SET temperature = %s,
-                humidity = %s,
-                updated_at = NOW()
+            SET current_quantity = %s
             WHERE node_id = %s;
         """
-        affected = self.db.execute_update(query, (temperature, humidity, node_id))
+        affected = self.db.execute_update(query, (quantity, node_id))
 
         if affected > 0:
-            print(f"✅ [FarmRepository] 노드 {node_id} 환경 데이터 업데이트 완료 "
-                  f"(온도={temperature}°C, 습도={humidity}%)")
+            print(f"✅ [FarmRepository] 노드 {node_id} 적재 수량 → {quantity}")
             return True
         else:
-            print(f"⚠️ [FarmRepository] 노드 {node_id} 업데이트 실패")
+            print(f"⚠️ [FarmRepository] 노드 {node_id} 수량 업데이트 실패")
             return False
 
     # ──────────── 노드 상태(점유/비어있음) 업데이트 ────────────
-    def update_node_status(self, node_id: int, status: str) -> bool:
+    def update_node_variety(self, node_id: str, variety_id: int | None) -> bool:
         """
-        노드의 점유 상태를 변경한다. (예: 'empty', 'occupied', 'growing')
+        노드에 품종을 배정하거나 초기화(출고 완료)한다.
 
         Args:
-            node_id : 대상 노드 ID
-            status  : 변경할 상태 문자열
+            node_id    : 대상 노드 ID (VARCHAR(50))
+            variety_id : 배정할 품종 ID (None이면 비움 – 출고 완료 SR-38)
 
         Returns:
             업데이트 성공 여부
         """
-        # TODO: 실제 status 컬럼명에 맞게 쿼리를 수정할 것
         query = """
             UPDATE farm_nodes
-            SET status = %s,
-                updated_at = NOW()
+            SET current_variety_id = %s
             WHERE node_id = %s;
         """
-        affected = self.db.execute_update(query, (status, node_id))
+        affected = self.db.execute_update(query, (variety_id, node_id))
         return affected > 0
 
     # ──────────── 빈 적재 공간 검색 ────────────
-    def find_empty_slots(self) -> list[dict]:
+    def find_empty_slots(self, node_type: str = "STATION") -> list[dict]:
         """
-        현재 비어있는(status='empty') 노드 슬롯 목록을 반환한다.
-        로봇이 작물을 이송할 목적지를 결정할 때 사용된다.
+        현재 비어있는 (current_quantity < max_capacity) 저장고 노드를 반환한다.
+        (SR-16: 빈 저장고 탐색)
+
+        Args:
+            node_type : 필터링할 노드 타입 (기본: 'STATION')
 
         Returns:
             비어있는 노드 딕셔너리 리스트 (없으면 빈 리스트)
         """
-        # TODO: 실제 status 값이 다를 경우 WHERE 조건 수정
-        query = "SELECT * FROM farm_nodes WHERE status = 'empty';"
-        result = self.db.execute_query(query)
+        query = """
+            SELECT * FROM farm_nodes
+            WHERE node_type = %s
+              AND is_active = TRUE
+              AND (current_quantity < max_capacity OR current_quantity IS NULL)
+            ORDER BY node_id;
+        """
+        result = self.db.execute_query(query, (node_type,))
 
         if result:
             print(f"🔍 [FarmRepository] 빈 슬롯 {len(result)}건 발견")
@@ -139,22 +144,38 @@ class FarmRepository:
         return result
 
     # ──────────── 센서 로그 기록 ────────────
-    def insert_sensor_log(self, node_id: int, temperature: float, humidity: float) -> bool:
+    def get_variety_by_id(self, variety_id: int) -> dict | None:
         """
-        센서에서 수신된 환경 데이터를 로그 테이블에 기록한다.
+        품종 ID로 seedling_varieties 테이블에서 품종 정보를 조회한다.
 
         Args:
-            node_id     : 센서가 설치된 노드 ID
-            temperature : 측정 온도
-            humidity    : 측정 습도
+            variety_id : 품종 고유 ID
 
         Returns:
-            기록 성공 여부
+            품종 정보 딕셔너리 또는 None
         """
-        # TODO: sensor_logs 테이블이 존재해야 함. 컬럼명 확인 후 수정.
+        query = "SELECT * FROM seedling_varieties WHERE variety_id = %s;"
+        result = self.db.execute_query(query, (variety_id,))
+        return result[0] if result else None
+
+    def find_section_for_variety(self, variety_id: int) -> list[dict]:
+        """
+        특정 품종이 배정될 수 있는 섹션(노드) 목록을 조회한다.
+        (SR-15: 품종에 맞는 섹션 배정)
+
+        Args:
+            variety_id : 배정할 품종 ID
+
+        Returns:
+            해당 품종에 맞는 빈 노드 리스트
+        """
         query = """
-            INSERT INTO sensor_logs (node_id, temperature, humidity, logged_at)
-            VALUES (%s, %s, %s, NOW());
+            SELECT * FROM farm_nodes
+            WHERE node_type = 'STATION'
+              AND is_active = TRUE
+              AND (current_variety_id = %s OR current_variety_id IS NULL)
+              AND (current_quantity < max_capacity OR current_quantity IS NULL)
+            ORDER BY node_id;
         """
-        affected = self.db.execute_update(query, (node_id, temperature, humidity))
-        return affected > 0
+        result = self.db.execute_query(query, (variety_id,))
+        return result if result else []

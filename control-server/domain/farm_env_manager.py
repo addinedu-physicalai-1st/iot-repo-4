@@ -47,7 +47,7 @@ class FarmEnvManager:
         self._env_cache: dict[int, dict] = {}
 
     # ──────────── 환경 데이터 업데이트 (메인 진입점) ────────────
-    def update_environment(self, node_id: int, temperature: float, humidity: float):
+    def update_environment(self, node_id: str, temperature: float, humidity: float):
         """
         센서에서 수신된 환경 데이터를 처리한다.
 

@@ -43,7 +43,7 @@ iot-repo-4/
 
 ```bash
 cd control-server
-pip install -r requirements.txtS
+pip install -r requirements.txt
 python main_server.py
 ```
 
