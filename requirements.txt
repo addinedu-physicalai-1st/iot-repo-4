@@ -1,0 +1,7 @@
+# ── 통합 스마트팜 자동화 시스템 – Python 의존성 패키지 ──
+
+# [control-server] DB 연결
+pymysql>=1.1.0
+
+# [main-gui] 관리자 관제 대시보드
+PyQt6>=6.6.0
