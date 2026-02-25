@@ -36,14 +36,14 @@ iot-repo-4/
 |------|-------------------|------|
 | control-server | Python, pymysql | 중앙 제어 서버, AWS EC2 MySQL DB 연동 |
 | main-gui | Python, PyQt | 관리자 관제 대시보드 |
-| robot-firmware | C++ (ESP32) | 무인 이송 시스템 펌웨어 |
+| robot-firmware | C++ (ESP32, ESP32 CAM) | 무인 이송 시스템 펌웨어 |
 | farm-firmware | C++ (ESP32) | 육묘 환경 제어 펌웨어 |
 
 ## 빠른 시작 (control-server)
 
 ```bash
 cd control-server
-pip install -r requirements.txt
+pip install -r requirements.txtS
 python main_server.py
 ```
 
