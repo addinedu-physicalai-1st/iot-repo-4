@@ -8,9 +8,11 @@
  *   - 중앙 서버와 TCP 통신 (제어 명령 수신 / 응답 전송)
  *   - 서버로 UDP 상태 브로드캐스트 (위치, 배터리 등)
  *   - ArduinoJson 라이브러리를 이용한 JSON 파싱/생성
+ *   - 라인트레이싱 경로 추종 제어
  *
  * [수신 명령 포맷 – TCP]
- *   이동:  {"cmd": "MOVE", "target_node": "NODE-A1-001"}
+ *   이동(경로): {"cmd": "MOVE", "path": "12345"}  (1=L, 2=R, 3=U, 4=S, 5=E)
+ *   이동(노드): {"cmd": "MOVE", "target_node": "NODE-A1-001"}
  *   작업:  {"cmd": "TASK", "action": "PICK_AND_PLACE", "count": 5}
  *   수동:  {"cmd": "MANUAL", "device": "FAN", "state": "ON"}
  *
@@ -18,7 +20,8 @@
  *   {"status": "SUCCESS", "msg": "도착 완료"}
  *
  * [송신 상태 포맷 – UDP]
- *   {"type": "ROBOT_STATE", "robot_id": "R01", "pos_x": 120, "pos_y": 350, "battery": 80}
+ *   {"type": "ROBOT_STATE", "robot_id": "R01", "pos_x": 120, "pos_y": 350, "battery": 80,
+ *    "state": 1, "node": "A1", "sensors": [0,1,1,1,0]}
  */
 
 #ifndef NETWORK_MANAGER_H
@@ -29,6 +32,9 @@
 #include <WiFiClient.h>
 #include <WiFiUdp.h>
 #include <ArduinoJson.h>
+
+#include "../motor/MotorController.h"
+#include "../line/LineFollower.h"
 
 /**
  * @brief ESP32 로봇의 네트워크 통신을 총괄하는 매니저 클래스.
@@ -42,6 +48,13 @@ public:
     // ─────────── 생성자 / 소멸자 ───────────
     NetworkManager();
     ~NetworkManager();
+
+    // ─────────── 초기화 ───────────
+    /**
+     * @brief 모터 컨트롤러 및 라인트레이서 초기화.
+     *        setup()에서 Wi-Fi 연결 전에 호출해야 함.
+     */
+    void initHardware();
 
     // ─────────── Wi-Fi 연결 ───────────
     /**
@@ -65,13 +78,16 @@ public:
     /**
      * @brief loop()에서 매 사이클 호출.
      *        TCP 소켓에서 데이터를 수신하고, 명령이 있으면 파싱하여 처리한다.
-     *
-     * TODO (팀원 구현):
-     *   - 수신 버퍼에서 JSON 문자열 읽기
-     *   - parseCommand()로 파싱
-     *   - cmd 종류에 따라 적절한 핸들러 호출
+     *        또한 라인트레이싱 로직을 업데이트한다.
      */
     void handleIncoming();
+
+    // ─────────── 라인트레이서 접근 ───────────
+    /**
+     * @brief LineFollower 객체 참조 반환 (외부에서 상태 조회용).
+     */
+    LineFollower& getLineFollower() { return _lineFollower; }
+    const LineFollower& getLineFollower() const { return _lineFollower; }
 
     // ─────────── 로봇 상태 UDP 브로드캐스트 ───────────
     /**
@@ -111,12 +127,11 @@ private:
 
     /**
      * @brief 이동 명령 처리.
-     *        수신: {"cmd": "MOVE", "target_node": "NODE-A1-001"}
+     *        수신 포맷 1 (경로): {"cmd": "MOVE", "path": "12345"}
+     *        수신 포맷 2 (노드): {"cmd": "MOVE", "target_node": "NODE-A1-001"}
      *
-     * TODO (팀원 구현):
-     *   1) target_node 값 추출
-     *   2) 해당 노드 좌표로 모터 구동 명령 전달
-     *   3) 이동 완료 후 sendResponse() 호출
+     *   path 필드가 있으면 라인트레이싱 경로 추종 시작.
+     *   target_node 필드만 있으면 기존 방식으로 처리.
      */
     void handleMove(JsonDocument& doc);
 
@@ -151,6 +166,10 @@ private:
     uint16_t    _udpPort;       // UDP 브로드캐스트 포트
 
     char _recvBuffer[1024];     // TCP 수신 버퍼
+
+    // ─────────── 모터 및 라인트레이싱 ───────────
+    MotorController _motorController;   // 모터 컨트롤러
+    LineFollower    _lineFollower;      // 라인트레이서
 };
 
 #endif // NETWORK_MANAGER_H

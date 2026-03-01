@@ -20,9 +20,20 @@ NetworkManager::NetworkManager()
     : _serverIP(nullptr)
     , _serverPort(0)
     , _udpPort(DEFAULT_UDP_PORT)
+    , _motorController()
+    , _lineFollower(_motorController)
 {
     memset(_recvBuffer, 0, sizeof(_recvBuffer));
     Serial.println("[NetworkManager] 초기화 완료");
+}
+
+// ============================================================
+//  하드웨어 초기화
+// ============================================================
+
+void NetworkManager::initHardware() {
+    _motorController.init();
+    Serial.println("[NetworkManager] 하드웨어 초기화 완료");
 }
 
 NetworkManager::~NetworkManager() {
@@ -81,6 +92,9 @@ bool NetworkManager::connectToServer(const char* serverIP, uint16_t serverPort) 
 // ============================================================
 
 void NetworkManager::handleIncoming() {
+    // 라인트레이싱 업데이트 (매 사이클 실행)
+    _lineFollower.update();
+
     // TCP 소켓에 수신 데이터가 있는지 확인
     if (!_tcpClient.connected() || !_tcpClient.available()) {
         return;
@@ -142,8 +156,13 @@ void NetworkManager::broadcastRobotState(const char* robotId, int posX, int posY
      * 서버에 로봇의 현재 상태를 UDP로 전송한다.
      *
      * 송신 포맷:
-     *   {"type": "ROBOT_STATE", "robot_id": "R01", "pos_x": 120, "pos_y": 350, "battery": 80}
+     *   {"type": "ROBOT_STATE", "robot_id": "R01", "pos_x": 120, "pos_y": 350, "battery": 80,
+     *    "state": 1, "node": "A1", "sensors": [0,1,1,1,0]}
      */
+
+    // 센서 값 조회
+    int s1, s2, s3, s4, s5;
+    _lineFollower.getSensorValues(s1, s2, s3, s4, s5);
 
     // JSON 문서 생성
     JsonDocument doc;
@@ -153,8 +172,20 @@ void NetworkManager::broadcastRobotState(const char* robotId, int posX, int posY
     doc["pos_y"]    = posY;
     doc["battery"]  = battery;
 
+    // 라인트레이싱 상태 추가
+    doc["state"]    = static_cast<int>(_lineFollower.getState());
+    doc["node"]     = _lineFollower.getCurrentNode();
+
+    // 센서 배열 추가
+    JsonArray sensors = doc["sensors"].to<JsonArray>();
+    sensors.add(s1);
+    sensors.add(s2);
+    sensors.add(s3);
+    sensors.add(s4);
+    sensors.add(s5);
+
     // JSON → 문자열 직렬화
-    char jsonBuffer[256];
+    char jsonBuffer[512];
     serializeJson(doc, jsonBuffer, sizeof(jsonBuffer));
 
     // UDP 패킷 전송
@@ -195,22 +226,39 @@ void NetworkManager::sendResponse(const char* status, const char* msg) {
 void NetworkManager::handleMove(JsonDocument& doc) {
     /*
      * 이동 명령 처리.
-     * 수신: {"cmd": "MOVE", "target_node": "NODE-A1-001"}
      *
-     * TODO (팀원 구현):
-     *   1) target_node 값 추출
-     *   2) 노드 좌표를 조회하거나 서버로부터 받아온 좌표 사용
-     *   3) 모터 드라이버에 이동 명령 전달
-     *   4) 이동 완료 대기
-     *   5) sendResponse("SUCCESS", "도착 완료") 호출
+     * 수신 포맷 1 (경로): {"cmd": "MOVE", "path": "12345"}
+     *   - 1=L(좌회전), 2=R(우회전), 3=U(U턴), 4=S(직진), 5=E(종료)
+     *   - 라인트레이싱으로 경로 추종 시작
+     *
+     * 수신 포맷 2 (노드): {"cmd": "MOVE", "target_node": "NODE-A1-001"}
+     *   - 기존 방식 (미구현)
      */
-    const char* targetNode = doc["target_node"];
-    Serial.printf("[NetworkManager] 🚗 이동 명령 수신 → 목표: %s\n", targetNode);
 
-    // TODO: 모터 구동 로직 구현
-    // MotorController::moveTo(targetX, targetY);
+    // 경로 기반 이동 (path 필드가 있는 경우)
+    if (doc.containsKey("path")) {
+        const char* path = doc["path"];
+        Serial.printf("[NetworkManager] 🚗 경로 이동 명령 수신 → 경로: %s\n", path);
 
-    sendResponse("SUCCESS", "이동 명령 수신 확인");
+        _lineFollower.setPath(path);
+        _lineFollower.start();
+
+        sendResponse("SUCCESS", "경로 추종 시작");
+        return;
+    }
+
+    // 노드 기반 이동 (target_node 필드가 있는 경우)
+    if (doc.containsKey("target_node")) {
+        const char* targetNode = doc["target_node"];
+        Serial.printf("[NetworkManager] 🚗 노드 이동 명령 수신 → 목표: %s\n", targetNode);
+
+        // TODO: 노드 좌표 조회 및 이동 로직 구현
+        sendResponse("SUCCESS", "노드 이동 명령 수신 확인");
+        return;
+    }
+
+    Serial.println("[NetworkManager] ⚠️ MOVE 명령에 path 또는 target_node 필드 없음");
+    sendResponse("FAIL", "path 또는 target_node 필드 필요");
 }
 
 void NetworkManager::handleTask(JsonDocument& doc) {
