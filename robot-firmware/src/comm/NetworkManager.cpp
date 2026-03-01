@@ -153,12 +153,18 @@ bool NetworkManager::parseCommand(const String& rawData, JsonDocument& doc) {
 
 void NetworkManager::broadcastRobotState(const char* robotId, int posX, int posY, int battery) {
     /*
-     * 서버에 로봇의 현재 상태를 UDP로 전송한다.
+     * 서버에 로봇의 현재 상태를 TCP로 전송한다.
      *
      * 송신 포맷:
      *   {"type": "ROBOT_STATE", "robot_id": "R01", "pos_x": 120, "pos_y": 350, "battery": 80,
      *    "state": 1, "node": "A1", "sensors": [0,1,1,1,0]}
      */
+
+    // TCP 연결 확인
+    if (!_tcpClient.connected()) {
+        Serial.println("[NetworkManager] ⚠️ TCP 연결 없음 - 상태 전송 스킵");
+        return;
+    }
 
     // 센서 값 조회
     int s1, s2, s3, s4, s5;
@@ -188,12 +194,10 @@ void NetworkManager::broadcastRobotState(const char* robotId, int posX, int posY
     char jsonBuffer[512];
     serializeJson(doc, jsonBuffer, sizeof(jsonBuffer));
 
-    // UDP 패킷 전송
-    _udpClient.beginPacket(_serverIP, _udpPort);
-    _udpClient.print(jsonBuffer);
-    _udpClient.endPacket();
+    // TCP로 전송
+    _tcpClient.println(jsonBuffer);
 
-    Serial.printf("[NetworkManager] 📡 상태 전송: %s\n", jsonBuffer);
+    Serial.printf("[NetworkManager] 📡 상태 전송(TCP): %s\n", jsonBuffer);
 }
 
 // ============================================================

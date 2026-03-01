@@ -19,7 +19,7 @@
  * [송신 응답 포맷 – TCP]
  *   {"status": "SUCCESS", "msg": "도착 완료"}
  *
- * [송신 상태 포맷 – UDP]
+ * [송신 상태 포맷 – TCP]
  *   {"type": "ROBOT_STATE", "robot_id": "R01", "pos_x": 120, "pos_y": 350, "battery": 80,
  *    "state": 1, "node": "A1", "sensors": [0,1,1,1,0]}
  */
@@ -89,16 +89,17 @@ public:
     LineFollower& getLineFollower() { return _lineFollower; }
     const LineFollower& getLineFollower() const { return _lineFollower; }
 
-    // ─────────── 로봇 상태 UDP 브로드캐스트 ───────────
+    // ─────────── 로봇 상태 TCP 전송 ───────────
     /**
-     * @brief 로봇의 현재 상태를 UDP로 서버에 전송한다.
+     * @brief 로봇의 현재 상태를 TCP로 서버에 전송한다.
      * @param robotId  로봇 식별 ID (예: "R01")
      * @param posX     현재 X 좌표
      * @param posY     현재 Y 좌표
      * @param battery  배터리 잔량 (%)
      *
      * 송신 포맷:
-     *   {"type": "ROBOT_STATE", "robot_id": "R01", "pos_x": 120, "pos_y": 350, "battery": 80}
+     *   {"type": "ROBOT_STATE", "robot_id": "R01", "pos_x": 120, "pos_y": 350, "battery": 80,
+     *    "state": 1, "node": "A1", "sensors": [0,1,1,1,0]}
      */
     void broadcastRobotState(const char* robotId, int posX, int posY, int battery);
 
