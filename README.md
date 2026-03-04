@@ -52,3 +52,4 @@ python main_server.py
 - **AWS EC2** 위에 MySQL(MariaDB) 세팅 완료
 - DB명: `smart_farm_v2`
 - 접속 정보는 `control-server/database/db_manager.py` 에 포함
+
