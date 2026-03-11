@@ -15,7 +15,7 @@
 // Wi-Fi / 서버 설정 (수동 수정)
 #define WIFI_SSID     "addinedu_201class_4-2.4G"
 #define WIFI_PASSWORD "201class4!"
-#define SERVER_IP     "192.168.0.12"
+#define SERVER_IP     "192.168.0.17"
 #define SERVER_TCP_PORT 8080
 #define SERVER_UDP_PORT 7070
 
