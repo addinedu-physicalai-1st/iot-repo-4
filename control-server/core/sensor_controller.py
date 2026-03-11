@@ -123,7 +123,7 @@ def process_sensor_and_control(p_id, node_id, dyn_ctrl_id, curr_temp, curr_humi,
 
         # 6. 로깅 및 캐시 업데이트
         log_suffix = f"({'inbound' if p_id==10 else 'outbound'}) " if p_id in [10, 99] else ""
-        print(f"📡 [{node_id}] {log_suffix}온도:{curr_temp}℃ | 조도:{curr_light} >> 📤 {command_led}, {command_val}, {command_fan}")
+        print(f"📡 [{node_id}] {log_suffix}온도:{curr_temp:,}℃ | 습도:{curr_humi:,}% | 조도:{curr_light:,} >> 📤 {command_led}, {command_val}, {command_fan}")
 
         latest_data[node_id] = {
             "temp": round(curr_temp, 1) if isinstance(curr_temp, (int, float)) else curr_temp,

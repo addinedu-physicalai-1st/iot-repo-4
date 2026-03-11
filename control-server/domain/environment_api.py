@@ -41,7 +41,7 @@ def get_latest_sensors():
     for node_id, data in latest_data.items():
         response_data[node_id.lower()] = {
             "temperature": data.get("temp", 0),
-            "humidity": data.get("hum", 0),
+            "humidity": data.get("humi", 0),
             "light": data.get("light", 0),
             "updated_at": data.get("last_updated", 0)
         }

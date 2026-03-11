@@ -114,13 +114,25 @@ def handle_tasks():
     # POST (작업 생성) 처리
     data = request.get_json() or request.form
     destination = (data.get("destination") or "").strip().lower()
-    robot_id = (data.get("robot_id") or "R01").strip()
+    req_robot_id = (data.get("robot_id") or "").strip()
 
     if not destination:
         return jsonify({"ok": False, "error": "목적지를 입력하세요"}), 400
 
     if destination not in VALID_NODES:
         return jsonify({"ok": False, "error": f"유효하지 않은 목적지: {destination}"}), 400
+
+    # 연결된 로봇 확인 및 동적 할당
+    agv_keys = [k for k in active_tcp_connections.keys() if k.startswith("R")]
+    
+    if req_robot_id:
+        if req_robot_id not in agv_keys:
+            return jsonify({"ok": False, "error": f"요청하신 로봇 '{req_robot_id}'이(가) 연결되어 있지 않습니다."}), 404
+        robot_id = req_robot_id
+    else:
+        if not agv_keys:
+            return jsonify({"ok": False, "error": "현재 사용 가능한 로봇이 서버에 연결되어 있지 않습니다."}), 503
+        robot_id = sorted(agv_keys)[0]  # 첫 번째로 연결된 로봇 사용
 
     # MySQL transport_tasks에 저장
     conn = None
@@ -172,13 +184,20 @@ def get_robot_state():
     """웹 대시보드(AGV 아이콘 이동)를 위한 현재 로봇 상태 반환"""
     from network.tcp_robot_server import active_tcp_connections, latest_robot_state
     
-    robot_id = request.args.get('robot_id', 'R01')
+    robot_id = request.args.get('robot_id')
+    
+    if not robot_id:
+        active_r = [k for k in latest_robot_state.keys() if k.startswith('R')]
+        robot_id = active_r[0] if active_r else "R01"
     
     if robot_id in latest_robot_state:
+        state_data = latest_robot_state[robot_id].copy()
+        state_data['robot_id'] = robot_id  # Frontend에서 참조할 수 있게 주입
+        
         return jsonify({
             "ok": True, 
             "connected": robot_id in active_tcp_connections,
-            "state": latest_robot_state[robot_id]
+            "state": state_data
         })
         
     return jsonify({"ok": False, "error": "데이터 없음"}), 404

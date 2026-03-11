@@ -89,6 +89,13 @@ function updateRobotPosition(state) {
         }
     }
 
+    // Update Identity
+    if (state.robot_id) {
+        agvRobotId = state.robot_id;
+        const idMark = document.getElementById("agv-id-display");
+        if (idMark) idMark.innerText = state.robot_id;
+    }
+
     // Update Battery
     if (state.battery) {
         agvElem.querySelector('.bat span').innerText = state.battery;

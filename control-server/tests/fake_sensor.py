@@ -32,21 +32,21 @@ def run_fake_sensor():
             pay.append(3) # sensor count
             
             # temp
-            t_val = int(t * 10)
+            t_val = int(t * 100)
             pay.append(0x01)
             pay.append((t_val >> 16) & 0xFF)
             pay.append((t_val >> 8) & 0xFF)
             pay.append(t_val & 0xFF)
             
             # hum
-            h_val = int(h * 10)
+            h_val = int(h * 100)
             pay.append(0x02)
             pay.append((h_val >> 16) & 0xFF)
             pay.append((h_val >> 8) & 0xFF)
             pay.append(h_val & 0xFF)
             
             # light
-            l_val = int(l / 10.0)
+            l_val = int(l * 100)
             pay.append(0x03)
             pay.append((l_val >> 16) & 0xFF)
             pay.append((l_val >> 8) & 0xFF)

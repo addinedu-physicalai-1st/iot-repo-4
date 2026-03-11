@@ -1,4 +1,29 @@
 /*
+#include <SPI.h>
+#include <MFRC522.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include "DHT.h"
+
+// 1. 네트워크 설정
+const char* ssid = "addinedu_201class_4-2.4G";
+const char* password = "201class4!";
+const char* farmServer = "http://192.168.0.135:5001/binary-data";
+const char* rfidServer = "http://192.168.0.135:5001/api/rfid_inoutbound";
+
+// 2. 핀 및 장치 설정
+#define RST_PIN         22          
+#define SS_PIN          5           
+#define DHTPIN          4
+#define DHTTYPE         DHT11
+#define PHOTO_PIN       34
+const int LED_PIN = 25;
+const int FAN_PIN = 33;
+const int VAL_PIN = 32;
+*/
+
+/*
  * smart_farm_nursery_esp32.ino
  * =======================================================
  * 육묘장 센서/액추에이터 컨트롤러 (단말 노드)
@@ -12,12 +37,12 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include "DHT.h"
-#include "../../robot-firmware/src/comm/SFAM_Protocol.h"
-
+//#include "../../robot-firmware/src/comm/SFAM_Protocol.h"
+#include "SFAM_Protocol.h"
 // ─────────── Wi-Fi / TCP 설정 ───────────
-const char* WIFI_SSID     = "YOUR_WIFI_SSID";
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
-const char* SERVER_IP     = "192.168.0.100";
+const char* WIFI_SSID     = "addinedu_201class_4-2.4G";
+const char* WIFI_PASSWORD = "201class4!";
+const char* SERVER_IP     = "192.168.0.135";
 const uint16_t SERVER_PORT = 8000;
 
 WiFiClient _tcpClient;
@@ -63,22 +88,22 @@ void sendTcpPacket(uint8_t msgType, uint8_t dstId, const uint8_t* payload, uint8
 
 // ─────────── 센서 묶음 전송 (서버로) ───────────
 void sendSensorBatch(float temp, float hum, int light) {
-    uint8_t pay[10];
+    uint8_t pay[13];
     pay[0] = 3; // 센서 3개
     
-    int32_t t_val = (int32_t)(temp * 10);
+    int32_t t_val = (int32_t)(temp * 100);
     pay[1] = 0x01;
     pay[2] = (t_val >> 16) & 0xFF;
     pay[3] = (t_val >> 8) & 0xFF;
     pay[4] = t_val & 0xFF;
 
-    int32_t h_val = (int32_t)(hum * 10);
+    int32_t h_val = (int32_t)(hum * 100);
     pay[5] = 0x02;
     pay[6] = (h_val >> 16) & 0xFF;
     pay[7] = (h_val >> 8) & 0xFF;
     pay[8] = h_val & 0xFF;
 
-    int32_t l_val = light;
+    int32_t l_val = (int32_t)(light);
     pay[9] = 0x03;
     pay[10] = (l_val >> 16) & 0xFF;
     pay[11] = (l_val >> 8) & 0xFF;
@@ -101,6 +126,19 @@ void handleTcpPacket(const uint8_t* buf, uint8_t hdrPayLen) {
     Serial.printf("[TCP-RX] Type:0x%02X, Seq:%d\n", msgType, seq);
 
     switch(msgType) {
+        case 0xFE: { // MSG_ACK
+            if (payLen >= 2) {
+                uint8_t ackedType = payload[0];
+                uint8_t ackedSeq  = payload[1];
+                
+                if (ackedType == MSG_SENSOR_BATCH) {
+                    Serial.printf("   ㄴ ✅ 센서 데이터(Seq:%d) 전송 성공 확인!\n", ackedSeq);
+                } else {
+                    Serial.printf("   ㄴ 메시지 타입 0x%02X에 대한 ACK 수신 (Seq:%d)\n", ackedType, ackedSeq);
+                }
+            }
+            break;
+        }
         case MSG_HEARTBEAT_REQ: {
             uint8_t pay[2] = {1, 0}; // ONLINE
             sendTcpPacket(MSG_HEARTBEAT_ACK, srcId, pay, 2);
@@ -110,13 +148,15 @@ void handleTcpPacket(const uint8_t* buf, uint8_t hdrPayLen) {
             if (payLen >= 4) {
                 uint8_t actId = payload[0];
                 uint8_t stateVal = payload[1];
-                Serial.printf("   -> 아두이노 연결 Actuator %d 제어 명령 전달: %d\n", actId, stateVal);
+                uint8_t triggerId = payload[2];
+                uint8_t durationSec = payload[3];
+                Serial.printf("   -> 아두이노 연결 Actuator %d 제어 명령 전달: %d, 트리거: %d, 지속시간: %ds\n", actId, stateVal, triggerId, durationSec);
                 
                 // TODO: UART로 아두이노에게 전달 로직
                 // ArduinoSerial.print("ACT:");
                 // ArduinoSerial.println(actId);
                 
-                uint8_t ackPay[3] = { actId, stateVal, 1 }; 
+                uint8_t ackPay[3] = { actId, stateVal, 0 }; // 0 = SUCCESS
                 sendTcpPacket(MSG_ACTUATOR_ACK, srcId, ackPay, 3);
             }
             break;
@@ -166,18 +206,29 @@ void processTcpByte(uint8_t b) {
 
 // ─────────── 연결 관리 ───────────
 void maintainConnection() {
+    unsigned long now = millis();
+
+    // 1. Wi-Fi 연결 상태 확인 및 재시도 (5초 주기)
     if (WiFi.status() != WL_CONNECTED) {
-        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-        return;
-    }
-    if (!_tcpClient.connected()) {
-        unsigned long now = millis();
         if (now - _lastReconnectAttempt >= 5000) {
             _lastReconnectAttempt = now;
-            Serial.println("[TCP] 재연결 시도...");
+            Serial.println("[Wi-Fi] 연결 시도 중...");
+            // 이전에 연결 시도 중이었다면 중단하고 새로 시작하거나, 
+            // 단순히 기다리도록 설계를 변경합니다.
+            WiFi.disconnect(); 
+            WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+        }
+        return; // 와이파이가 연결되지 않으면 TCP 연결 시도를 하지 않음
+    }
+
+    // 2. TCP 서버 연결 상태 확인 및 재시도 (5초 주기)
+    if (!_tcpClient.connected()) {
+        if (now - _lastReconnectAttempt >= 5000) {
+            _lastReconnectAttempt = now;
+            Serial.println("[TCP] 서버 재연결 시도...");
             if (_tcpClient.connect(SERVER_IP, SERVER_PORT)) {
                 _tcpClient.setNoDelay(true);
-                Serial.println("[TCP] 연결 성공!");
+                Serial.println("[TCP] 서버 연결 성공!");
             }
         }
     }

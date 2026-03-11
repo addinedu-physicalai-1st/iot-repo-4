@@ -15,8 +15,8 @@
 // Wi-Fi / 서버 설정 (수동 수정)
 #define WIFI_SSID     "addinedu_201class_4-2.4G"
 #define WIFI_PASSWORD "201class4!"
-#define SERVER_IP     "192.168.0.12"
-#define SERVER_TCP_PORT 8080
+#define SERVER_IP     "192.168.0.135"   // control-server IP (로컬: 127.0.0.1)
+#define SERVER_TCP_PORT 8000           // control-server AGV TCP 포트
 #define SERVER_UDP_PORT 7070
 
 #include <WiFi.h>
@@ -29,8 +29,9 @@
 // 로봇 식별자
 const char* ROBOT_ID = "R01";
 
-// 상태 브로드캐스트 주기 (밀리초)
-const unsigned long BROADCAST_INTERVAL = 1000; // 1초
+// 상태 브로드캐스트 주기 (명세: 이동중 500ms, IDLE 2초)
+const unsigned long TELEMETRY_INTERVAL_MOVING = 500;
+const unsigned long TELEMETRY_INTERVAL_IDLE = 2000;
 
 // ============================================================
 //  전역 객체
@@ -56,8 +57,12 @@ void setup() {
     Serial.println("   🤖 스마트팜 로봇 펌웨어 시작");
     Serial.println("========================================");
 
-    // 1. 하드웨어 초기화 (모터, 센서)
+    // 1. 하드웨어 초기화 (모터, 센서) 및 ID 설정
+    int idVal = atoi(&ROBOT_ID[1]); // "R01" -> 1, "R02" -> 2 자동으로 추출
+    
+    robotNetworkManager.setRobotId(idVal); // 패킷 헤더에 들어갈 src_id 자동 설정
     robotNetworkManager.initHardware();
+    robotNetworkManager.setLocationByNodeName("a01", 1);  // 초기 위치: a01, E 방향
 
     // 2. Wi-Fi 연결
     Serial.println("\n[Main] Wi-Fi 연결 중...");
@@ -146,9 +151,11 @@ void loop() {
     // TCP 명령 수신 및 라인트레이싱 업데이트
     robotNetworkManager.handleIncoming();
 
-    // 주기적 상태 브로드캐스트 및 적외선 센서 시리얼 출력
+    // 주기적 상태 브로드캐스트 (명세: 이동중 500ms, IDLE 2초)
     unsigned long currentTime = millis();
-    if (currentTime - lastBroadcastTime >= BROADCAST_INTERVAL) {
+    unsigned long interval = robotNetworkManager.getLineFollower().isRunning()
+        ? TELEMETRY_INTERVAL_MOVING : TELEMETRY_INTERVAL_IDLE;
+    if (currentTime - lastBroadcastTime >= interval) {
         // WiFi 상태 시리얼 출력
         if (WiFi.status() == WL_CONNECTED) {
             Serial.printf("[WiFi] 연결됨 %s (RSSI: %ddBm)\n",
@@ -164,7 +171,7 @@ void loop() {
 
         // 위치 좌표는 추후 구현 (현재 0, 0 전송)
         // 배터리 잔량도 추후 구현 (현재 100% 전송)
-        robotNetworkManager.broadcastRobotState(ROBOT_ID, 0, 0, 100);
+        robotNetworkManager.broadcastRobotState();
         lastBroadcastTime = currentTime;
     }
 }
