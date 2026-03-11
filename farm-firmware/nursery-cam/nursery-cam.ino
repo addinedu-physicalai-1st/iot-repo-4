@@ -86,7 +86,7 @@
 // ─────────────────────────────────────────────────────────────
 const char*  ssid       = "addinedu_201class_4-2.4G";
 const char*  password   = "201class4!";
-const char*  udpAddress = "192.168.0.13";   // Host PC IP
+const char*  udpAddress = "192.168.0.135";   // Host PC IP
 const int    udpPort    = 7070;
 
 WiFiUDP udp;
