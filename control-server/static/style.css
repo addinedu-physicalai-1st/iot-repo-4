@@ -471,18 +471,25 @@ body {
 }
 
 /* Floating Widgets on Map */
-.floating-camera {
+.overlays-container {
     position: absolute;
     bottom: 20px;
     left: 20px;
+    display: flex;
+    gap: 20px;
+    z-index: 50;
+    pointer-events: none;
+}
+
+.floating-camera {
     width: 260px;
     aspect-ratio: 4/3;
     background: #000;
     border-radius: 12px;
     overflow: hidden;
     border: 1px solid var(--panel-border);
-    z-index: 50;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+    pointer-events: auto;
 }
 
 .cam-header {
@@ -525,14 +532,11 @@ body {
 }
 
 .floating-controls {
-    position: absolute;
-    bottom: 20px;
-    left: 300px;
     display: flex;
     flex-direction: column;
     gap: 10px;
-    z-index: 50;
     width: 200px;
+    pointer-events: auto;
 }
 
 .floating-controls .btn {
@@ -866,5 +870,25 @@ input:checked+.slider:before {
     .track-node.storage-node {
         width: 56px;
         height: 56px;
+    }
+}
+
+@media (max-width: 768px) {
+    .overlays-container {
+        position: relative;
+        bottom: auto;
+        left: auto;
+        flex-direction: column;
+        padding-top: 20px;
+        width: 100%;
+        gap: 10px;
+    }
+    .floating-camera, .floating-controls {
+        width: 100%;
+    }
+    .track-container {
+        min-height: 480px; /* Space for the map nodes which are absolute */
+        height: auto;
+        padding-bottom: 20px;
     }
 }

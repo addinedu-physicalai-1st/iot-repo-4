@@ -37,9 +37,9 @@ function pollSensorData() {
                     const envBox = document.getElementById(`env-${nodeId.toLowerCase()}`);
                     if (envBox) {
                         const sData = data.sensors[nodeId];
-                        envBox.querySelector('.v.temp').innerText = sData.temperature;
-                        envBox.querySelector('.v.hum').innerText = sData.humidity;
-                        envBox.querySelector('.v.lux').innerText = sData.light;
+                        envBox.querySelector('.v.temp').innerText = sData.temperature !== undefined ? sData.temperature : sData.temp;
+                        envBox.querySelector('.v.hum').innerText = sData.humidity !== undefined ? sData.humidity : sData.humi;
+                        envBox.querySelector('.v.lux').innerText = Math.floor(sData.light || 0);
 
                         // Flash border to indicate data arrival
                         const nodeElement = envBox.parentElement;

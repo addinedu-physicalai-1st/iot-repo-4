@@ -138,26 +138,30 @@
                         </div>
                     </div>
 
-                    <!-- Floating Overlays on Map -->
-                    <div class="floating-camera">
-                        <div class="cam-header">
-                            <h3>ESP32-CAM (라이브 뷰)</h3>
-                            <span id="cam-fps" class="fps-badge">0 FPS</span>
+                    <!-- Map nodes end here -->
+                    </div>
+
+                    <!-- Overlays on Desktop, Stacked on Mobile -->
+                    <div class="overlays-container">
+                        <div class="floating-camera">
+                            <div class="cam-header">
+                                <h3>ESP32-CAM (라이브 뷰)</h3>
+                                <span id="cam-fps" class="fps-badge">0 FPS</span>
+                            </div>
+                            <div class="cam-view">
+                                <img id="agv-cam-stream" src="/api/camera/stream" alt="카메라 오프라인"
+                                    onerror="this.onerror=null; this.src=''; this.alt='카메라 오프라인';">
+                            </div>
                         </div>
-                        <div class="cam-view">
-                            <img id="agv-cam-stream" src="/api/camera/stream" alt="카메라 오프라인"
-                                onerror="this.onerror=null; this.src=''; this.alt='카메라 오프라인';">
+
+                        <div class="floating-controls">
+                            <button class="btn btn-action" onclick="openGotoModal()"
+                                style="font-size: 14px; padding: 12px;">🎯 로봇 목적지 전송</button>
+                            <button class="btn btn-secondary" onclick="openFullLogsModal()">📋 전체 작업 로그</button>
+                            <button class="btn btn-danger" onclick="emergencyStop()">🚨 시스템 비상 정지</button>
                         </div>
                     </div>
 
-                    <div class="floating-controls">
-                        <button class="btn btn-action" onclick="openGotoModal()"
-                            style="font-size: 14px; padding: 12px;">🎯 로봇 목적지 전송</button>
-                        <button class="btn btn-secondary" onclick="openFullLogsModal()">📋 전체 작업 로그</button>
-                        <button class="btn btn-danger" onclick="emergencyStop()">🚨 시스템 비상 정지</button>
-                    </div>
-
-                </div>
 
             </section>
         </main>
