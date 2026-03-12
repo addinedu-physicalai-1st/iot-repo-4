@@ -12,7 +12,8 @@ from core.node_identifier import identify_node
 from core.sensor_controller import latest_data, process_sensor_and_control
 from network.sfam_protocol import (
     SfamParser, build_packet, MSG_HEARTBEAT_REQ, MSG_HEARTBEAT_ACK,
-    MSG_AGV_TELEMETRY, MSG_SENSOR_BATCH, MSG_RFID_EVENT, ID_SERVER, MSG_AGV_TASK_CMD
+    MSG_AGV_TELEMETRY, MSG_SENSOR_BATCH, MSG_RFID_EVENT, ID_SERVER, 
+    MSG_AGV_TASK_CMD, MSG_ACTUATOR_CMD
 )
 
 # TCP 연결된 클라이언트 소켓 관리
@@ -136,7 +137,27 @@ def handle_hardware_client(client_socket, addr):
                             p_id, node_id, dyn_ctrl_id = identify_node(src_id)
                             
                             # 로직 통합: process_sensor_and_control 호출 (DB 저장 및 제어값 계산 포함)
-                            process_sensor_and_control(p_id, node_id, dyn_ctrl_id, temp, hum, light, water)
+                            cmds = process_sensor_and_control(p_id, node_id, dyn_ctrl_id, temp, hum, light, water)
+                            
+                            # 자동 제어로직에 따른 패킷 전송 (TCP 연결 시에만)
+                            from network.terminal_cli import log_actuator_packet
+                            # cmds: (led_cmd, pump_cmd, fan_cmd, heater_cmd)
+                            # Actuator Mapping: 0=MODE(N/A), 1=PUMP, 2=FAN, 3=HEATER, 4=LED
+                            act_map = {1: cmds[1], 2: cmds[2], 3: cmds[3], 4: cmds[0]}
+                            
+                            for act_id, cmd_str in act_map.items():
+                                # 상태값 추출 (PUMP_ON -> 1, PUMP_OFF -> 0, LED_ON -> 100)
+                                pure_state = cmd_str.split('_')[1]
+                                state_val = 1 if pure_state == "ON" else 0
+                                if act_id == 4: # LED
+                                    state_val = 100 if pure_state == "ON" else 0
+                                
+                                # 패킷 생성 및 전송
+                                payload = struct.pack('BBBB', act_id, state_val, 1, 0) # Trigger 1 = AUTO
+                                target_id = src_id # 본인에게 반환
+                                pkt = build_packet(MSG_ACTUATOR_CMD, ID_SERVER, target_id, 0, payload)
+                                
+                                client_socket.sendall(pkt)
                                 
                     # 4. AGV 로봇이 통신으로 보낸 RFID 태그 인식 이벤트 (0x24)
                     elif msg_type == MSG_RFID_EVENT:

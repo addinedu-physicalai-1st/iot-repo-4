@@ -3,6 +3,7 @@
 let agvRobotId = "R01";
 let currentRobotNode = null;
 let nodeDetailChart = null;
+let latestNurseryData = {}; // 육묘장 노드별 최신 센서/장치 데이터 저장소
 
 // Initialize on load
 document.addEventListener("DOMContentLoaded", () => {
@@ -34,6 +35,7 @@ function pollSensorData() {
         .then(res => res.json())
         .then(data => {
             if (data.ok && data.sensors) {
+                latestNurseryData = data.sensors; // 전역 저장소 업데이트
                 Object.keys(data.sensors).forEach(nodeId => {
                     const envBox = document.getElementById(`env-${nodeId.toLowerCase()}`);
                     if (envBox) {
@@ -41,6 +43,14 @@ function pollSensorData() {
                         envBox.querySelector('.v.temp').innerText = sData.temperature;
                         envBox.querySelector('.v.hum').innerText = sData.humidity;
                         envBox.querySelector('.v.lux').innerText = sData.light;
+
+                        // 현재 팝업이 이 노드에 대해 열려있다면 스위치 상태 동기화
+                        if (!document.getElementById('node-modal').classList.contains('hidden')) {
+                            const modalTitle = document.getElementById('modal-title').innerText;
+                            if (modalTitle.includes(nodeId.toUpperCase())) {
+                                updateModalSwitches(sData);
+                            }
+                        }
 
                         // Flash border to indicate data arrival
                         const nodeElement = envBox.parentElement;
@@ -246,10 +256,30 @@ function openNodeModal(nodeId) {
             }
         });
 
-    // Set dummy state for controls (This would ideally come from the API too)
-    document.getElementById('ctrl-led').checked = Math.random() > 0.5;
-    document.getElementById('ctrl-fan').checked = false;
-    document.getElementById('ctrl-val').checked = false;
+    // 데이터 저장소에서 현재 노드의 상태를 찾아 스위치 설정
+    const nodeData = latestNurseryData[nodeId.toLowerCase()];
+    if (nodeData) {
+        updateModalSwitches(nodeData);
+    } else {
+        // 데이터가 없으면 초기화
+        document.getElementById('ctrl-pump').checked = false;
+        document.getElementById('ctrl-fan').checked = false;
+        document.getElementById('ctrl-heater').checked = false;
+        document.getElementById('ctrl-led').checked = false;
+    }
+}
+
+/**
+ * 팝업창 내의 스위치들을 데이터 상태에 맞게 업데이트하는 헬퍼 함수
+ */
+function updateModalSwitches(nodeData) {
+    if (!nodeData) return;
+    
+    // 서버에서 전달받은 "LED_ON", "LED_OFF" 등의 문자열을 boolean으로 변환
+    if (nodeData.pump) document.getElementById('ctrl-pump').checked = nodeData.pump.includes("_ON");
+    if (nodeData.fan) document.getElementById('ctrl-fan').checked = nodeData.fan.includes("_ON");
+    if (nodeData.heater) document.getElementById('ctrl-heater').checked = nodeData.heater.includes("_ON");
+    if (nodeData.led) document.getElementById('ctrl-led').checked = nodeData.led.includes("_ON");
 }
 
 function closeNodeModal() {
@@ -346,7 +376,7 @@ function toggleDevice(device) {
     }).then(res => res.json())
         .then(data => {
             if (data.ok) {
-                addLocalLog(`[CTRL] 수동 제어: ${currNode.toUpperCase()} ${device.toUpperCase()} 밸브 ${state}`, 'cmd-out');
+                addLocalLog(`[CTRL] 수동 제어: ${currNode.toUpperCase()} ${device.toUpperCase()} ${state}`, 'cmd-out');
                 // 육묘장 로그 탭이 열려있다면 즉시 갱신
                 if (!document.getElementById('logs-modal').classList.contains('hidden')) {
                     fetchNurseryLogs();

@@ -186,23 +186,30 @@
                     <h3>수동 제어 패널</h3>
                     <div class="control-grid">
                         <div class="control-item">
-                            <label>LED 조명</label>
+                            <label>워터 펌프 (PUMP)</label>
                             <label class="switch">
-                                <input type="checkbox" id="ctrl-led" onchange="toggleDevice('led')">
+                                <input type="checkbox" id="ctrl-pump" onchange="toggleDevice('pump')">
                                 <span class="slider round"></span>
                             </label>
                         </div>
                         <div class="control-item">
-                            <label>환기 팬</label>
+                            <label>환기 팬 (FAN)</label>
                             <label class="switch">
                                 <input type="checkbox" id="ctrl-fan" onchange="toggleDevice('fan')">
                                 <span class="slider round"></span>
                             </label>
                         </div>
                         <div class="control-item">
-                            <label>양액 밸브</label>
+                            <label>온열 히터 (HEATER)</label>
                             <label class="switch">
-                                <input type="checkbox" id="ctrl-val" onchange="toggleDevice('val')">
+                                <input type="checkbox" id="ctrl-heater" onchange="toggleDevice('heater')">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="control-item">
+                            <label>LED 조명 (LED)</label>
+                            <label class="switch">
+                                <input type="checkbox" id="ctrl-led" onchange="toggleDevice('led')">
                                 <span class="slider round"></span>
                             </label>
                         </div>

@@ -137,6 +137,10 @@ if __name__ == '__main__':
 
     try:
         app.run(host='0.0.0.0', port=flask_port, debug=False, use_reloader=False)
+    except KeyboardInterrupt:
+        print("\n👋 서버를 종료합니다... (터미널 복구 중)")
     except OSError as e:
         print(f"\n❌ [Flask Server] 포트 {flask_port} 사용 불가: {e}")
         print(f"👉 터미널에서 'sudo kill -9 $(sudo lsof -t -i:{flask_port})' 명령어로 이전 프로세스를 종료해주세요.")
+    finally:
+        print("✅ 종료 완료.")

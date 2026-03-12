@@ -5,14 +5,35 @@ import sys
 import select
 import termios
 import tty
+import atexit
 from network.tcp_robot_server import active_tcp_connections
 from network.sfam_protocol import build_packet, MSG_ACTUATOR_CMD, ID_SERVER
 from core import sensor_controller
 
+# 터미널 복구를 위한 전역 변수
+_ORIGINAL_TERMIOS = None
+try:
+    _ORIGINAL_TERMIOS = termios.tcgetattr(sys.stdin.fileno())
+except:
+    pass
+
+def restore_terminal():
+    """프로그램 종료 시 터미널 설정을 원래대로 복구하고 색상을 리셋합니다."""
+    if _ORIGINAL_TERMIOS:
+        fd = sys.stdin.fileno()
+        termios.tcsetattr(fd, termios.TCSADRAIN, _ORIGINAL_TERMIOS)
+    # ANSI 색상 및 속성 리셋
+    sys.stdout.write("\033[0m")
+    sys.stdout.flush()
+
+# 프로그램 종료 시 무조건 실행되도록 등록
+atexit.register(restore_terminal)
+
 # 액추에이터 및 상태 매핑
 ACTUATOR_MAP = {
     'MODE': 0, 'PUMP': 1, 'FAN': 2, 'HEATER': 3, 'LED': 4,
-    '모드': 0, '펌프': 1, '팬': 2, '히터': 3, '조명': 4, 'LIGHT': 4
+    '모드': 0, '워터펌프': 1, '팬': 2, '히터': 3, '조명': 4, 'LIGHT': 4,
+    '온열히터': 3, '난방기': 3, '워터': 1, 'WATERPUMP': 1
 }
 
 STATE_MAP = {
@@ -20,6 +41,30 @@ STATE_MAP = {
     '1': 1, '0': 0,
     'AUTO': 1, 'MANUAL': 0
 }
+
+def log_actuator_packet(node_id, act_id, state_val, trigger, raw_packet=None):
+    """
+    ESP32로 전송되는 액추에이터 패킷을 사람이 읽기 좋은 로그와 실제 바이너리 데이터를 함께 출력합니다.
+    """
+    act_names = {0: 'MODE(운영모드)', 1: 'PUMP(워터펌프)', 2: 'FAN(환기팬)', 3: 'HEATER(온열히터)', 4: 'LED(조명)'}
+    name = act_names.get(act_id, f"ACT_{act_id}")
+    
+    # 상태 값 해석
+    if act_id == 0: # MODE
+        status_str = "AUTO(자동)" if state_val == 1 else "MANUAL(수동)"
+    elif act_id == 4: # LED
+        status_str = f"{state_val}%"
+    else: # PUMP, FAN, HEATER
+        status_str = "ON(켜짐)" if state_val == 1 else "OFF(꺼짐)"
+        
+    trigger_name = "수동(Manual)" if trigger == 2 else "자동(Auto)"
+    
+    # 바이너리 헥사 스트링 생성
+    hex_data = raw_packet.hex(' ').upper() if raw_packet else "N/A"
+    
+    # [PACKET] 로그 출력 (Type 0x21: MSG_ACTUATOR_CMD)
+    print(f"📦 [PKT 📤] {node_id} >> {name}:{status_str} ({trigger_name})")
+    print(f"   └─ Raw Packet: {hex_data}")
 
 def process_command(cmd_line):
     """명령어 파싱 및 패킷 전송 로직"""
@@ -78,32 +123,26 @@ def process_command(cmd_line):
         print(f"❌ 알 수 없는 상태: {status}")
         return
     
-    # 4. 패킷 생성 및 전송
-    # Payload: [actuator_id(1), state(1), trigger(1), duration(1)]
-    payload = struct.pack('BBBB', act_id, val, 2, 0) # Trigger 2 = MANUAL
-    packet = build_packet(MSG_ACTUATOR_CMD, ID_SERVER, target_protocol_id, 0, payload)
+    # 4. 중앙 제어 핸들러를 통해 명령 실행 (상태 동기화, DB 기록, 패킷 전송 통합)
+    ok, msg = sensor_controller.execute_manual_control(node_key, target, val, 2)
     
-    if node_key in active_tcp_connections:
-        try:
-            active_tcp_connections[node_key].sendall(packet)
-            print(f"✅ [명령 완료] {node_key} >> {target}(ID:{act_id}) {status}(Val:{val})")
-            # 5. DB에 수동 제어 로그 저장
-            sensor_controller.log_manual_actuator_to_db(node_key, act_id, val)
-        except Exception as e:
-            print(f"❌ [전송 실패] {e}")
+    if ok:
+        print(f"✅ [CLI 명령 완료] {node_key} >> {target} {status} (Val:{val})")
     else:
-        print(f"⚠️  [연결 없음] {node_key} 접속 상태 확인 필요")
+        print(f"⚠️  [CLI 명령 실패] {node_key} >> {msg}")
 
 def terminal_cli_loop():
     """실시간 키 입력을 감지하여 로그를 제어하는 루프"""
+    if not _ORIGINAL_TERMIOS:
+        return
+
     fd = sys.stdin.fileno()
     time.sleep(2)
     print("\n⌨️  [CLI] 커맨드 모드 가동 (':' 누르면 입력 가능)")
     
     while True:
-        old_settings = termios.tcgetattr(fd)
         try:
-            # 1. 한 글자씩 읽기 위해 터미널 모드 변경 (Non-blocking 느낌으로)
+            # 1. 한 글자씩 읽기 위해 터미널 모드 변경 (에코 꺼짐)
             tty.setcbreak(fd)
             # 입력이 들어올 때까지 0.5초 대기하면서 반복
             rlist, _, _ = select.select([sys.stdin], [], [], 0.5)
@@ -114,7 +153,7 @@ def terminal_cli_loop():
                     # 2. ':' 가 들어오는 순간 즉시 로그 차단
                     sensor_controller.log_suppressed = True
                     # 표준 입력 모드로 복구하여 input() 사용 준비
-                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                    termios.tcsetattr(fd, termios.TCSADRAIN, _ORIGINAL_TERMIOS)
                     
                     # 화면 정리 및 입력 받기
                     sys.stdout.write("\r\033[K") # 현재 라인 지우기
@@ -130,14 +169,16 @@ def terminal_cli_loop():
                 else:
                     # ':' 외의 키는 그냥 무시하고 넘김
                     pass
-        except Exception as e:
+            
+            # 루프 끝에서 모드 복구 (안정성)
+            termios.tcsetattr(fd, termios.TCSADRAIN, _ORIGINAL_TERMIOS)
+            
+        except Exception:
             sensor_controller.log_suppressed = False
-            # termios 복구 시도
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            try:
+                termios.tcsetattr(fd, termios.TCSADRAIN, _ORIGINAL_TERMIOS)
+            except: pass
             time.sleep(1)
-        finally:
-            # 루프 끝에서 항상 모드 복구 시도 (안정성)
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
 def start_terminal_cli():

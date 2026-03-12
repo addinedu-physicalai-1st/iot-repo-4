@@ -36,15 +36,20 @@ def system_status():
 
 @env_bp.route('/api/sensor/latest')
 def get_latest_sensors():
-    """각 노드별 최신 온습도, 조도 센서값"""
-    # JS에서 받아서 카드를 채우도록 포맷 변경
+    """각 노드별 최신 센서값 및 구동기 상태"""
     response_data = {}
     for node_id, data in latest_data.items():
+        # sensor_controller.py의 latest_data 구조에 맞춰 모든 필드 포함
         response_data[node_id.lower()] = {
             "temperature": data.get("temp", 0),
-            "humidity": data.get("hum", 0),
+            "humidity": data.get("humi", 0), # 'hum' -> 'humi' 키 일치화
             "light": data.get("light", 0),
-            "updated_at": data.get("last_updated", 0)
+            "water": data.get("water", 0),
+            "led": data.get("led", "LED_OFF"),
+            "pump": data.get("pump", "PUMP_OFF"),
+            "fan": data.get("fan", "FAN_OFF"),
+            "heater": data.get("heater", "HEATER_OFF"),
+            "updated_at": data.get("last_seen", 0)
         }
     return jsonify({"ok": True, "sensors": response_data})
 
@@ -52,9 +57,6 @@ def get_latest_sensors():
 @env_bp.route('/api/sensor/control', methods=['POST'])
 def control_sensor():
     """웹 GUI의 수동 제어 명령을 받아 ESP32에 반영 및 즉시 로깅"""
-    from database.db_config import get_db_connection
-    from datetime import datetime
-    
     data = request.get_json()
     node_id = data.get('node_id', '').lower()
     device = data.get('device')  # 'led', 'val', 'fan'
@@ -63,64 +65,18 @@ def control_sensor():
     if not node_id or not device or not state:
         return jsonify({"ok": False, "error": "Invalid params"}), 400
         
-    if node_id not in manual_overrides:
-        manual_overrides[node_id] = {}
-        
-    cmd = f"{device.upper()}_{state.upper()}"
-    manual_overrides[node_id][device.lower()] = cmd
+    # --- 중앙 제어 핸들러를 통해 명령 실행 (상태 동기화, DB 기록, 패킷 전송 통합) ---
+    from core.sensor_controller import execute_manual_control
     
-    # --- 즉시 로깅 추가 ---
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            # 1. user_action_logs 기록
-            user_id = 1 # 기본 admin/system ID (세션 연동 시 세션값 사용 가능)
-            action_detail = {"node_id": node_id, "device": device, "state": state, "manual": True}
-            cursor.execute("""
-                INSERT INTO user_action_logs (user_id, action_type_id, target_id, action_detail, action_result, action_time)
-                VALUES (%s, 19, %s, %s, 1, NOW())
-            """, (user_id, node_id, json.dumps(action_detail)))
-            
-            # 2. nursery_actuator_logs 기록 (장치 타입 매핑: VAL=1, FAN=2, LED=3)
-            a_type_id = {"val": 1, "fan": 2, "led": 3}.get(device.lower())
-            if a_type_id:
-                # 해당 노드의 동작기 ID 찾기
-                cursor.execute("""
-                    SELECT actuator_id FROM nursery_actuators na
-                    JOIN nursery_controllers nc ON na.controller_id = nc.controller_id
-                    WHERE nc.node_id = %s AND na.actuator_type_id = %s
-                """, (node_id.upper(), a_type_id))
-                act_row = cursor.fetchone()
-                
-                if act_row:
-                    act_id = act_row['actuator_id']
-                else:
-                    # 자동 등록: 컨트롤러 ID 먼저 확인
-                    cursor.execute("SELECT controller_id FROM nursery_controllers WHERE node_id = %s LIMIT 1", (node_id.upper(),))
-                    ctrl_row = cursor.fetchone()
-                    if ctrl_row:
-                        ctrl_id = ctrl_row['controller_id']
-                    else:
-                        ctrl_id = f"CTRL_{node_id.upper()}"
-                        cursor.execute("INSERT IGNORE INTO nursery_controllers (controller_id, node_id) VALUES (%s, %s)", (ctrl_id, node_id.upper()))
-                    
-                    # 액추에이터 등록 (핀 번호는 0으로 임시 설정)
-                    cursor.execute("""
-                        INSERT INTO nursery_actuators (controller_id, actuator_type_id, pin_number)
-                        VALUES (%s, %s, 0)
-                    """, (ctrl_id, a_type_id))
-                    act_id = cursor.lastrowid
-
-                # 로그 삽입
-                cursor.execute("""
-                    INSERT INTO nursery_actuator_logs (actuator_id, state_value, trigger_id, logged_at)
-                    VALUES (%s, %s, 1, NOW())
-                """, (act_id, state.upper()))
-        conn.commit()
-    except Exception as e:
-        print(f"Manual Log Error: {e}")
-    finally:
-        conn.close()
+    # state 문자열(ON/OFF)을 숫자 값으로 변환 (LED 100/0, 그 외 1/0)
+    dev_lower = device.lower()
+    state_upper = state.upper()
+    state_val = 100 if state_upper == "ON" and dev_lower == "led" else (1 if state_upper == "ON" else 0)
+    
+    ok, msg = execute_manual_control(node_id, device, state_val, 2)
+    
+    if not ok:
+        return jsonify({"ok": False, "error": msg}), 500
         
     return jsonify({"ok": True, "message": f"{node_id.upper()} {device.upper()} -> {state} 설정 및 로그 기록 완료"})
 
@@ -161,7 +117,7 @@ def get_nursery_logs():
             cursor.execute("""
                 SELECT * FROM (
                     (SELECT 'CONTROL' as type, logged_at as time, 
-                            CONCAT(nc.node_id, ' ', CASE na.actuator_type_id WHEN 1 THEN '밸브' WHEN 2 THEN '팬' ELSE 'LED' END, ' ', state_value) as msg
+                            CONCAT(nc.node_id, ' ', CASE na.actuator_type_id WHEN 1 THEN '워터펌프' WHEN 2 THEN '팬' WHEN 3 THEN '온열히터' ELSE 'LED' END, ' ', state_value) as msg
                      FROM nursery_actuator_logs nal
                      JOIN nursery_actuators na ON nal.actuator_id = na.actuator_id
                      JOIN nursery_controllers nc ON na.controller_id = nc.controller_id
