@@ -51,10 +51,13 @@ def receive_rfid_inoutbound():
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            # 1. 태그 UID로 트레이 정보 확인
+            # 1. 태그 UID로 트레이 정보 확인 (품종 및 작물명 포함)
             cursor.execute("""
-                SELECT tray_id, variety_id, tray_status
-                FROM trays WHERE nfc_uid = %s AND is_active = TRUE
+                SELECT t.tray_id, t.variety_id, t.tray_status, v.variety_name, c.crop_name
+                FROM trays t
+                JOIN seedling_varieties v ON t.variety_id = v.variety_id
+                JOIN crops c ON v.crop_id = c.crop_id
+                WHERE t.nfc_uid = %s AND t.is_active = TRUE
             """, (uid,))
             tray_info = cursor.fetchone()
 
@@ -87,7 +90,7 @@ def receive_rfid_inoutbound():
                   AND fn.current_variety_id = %s 
                   AND fn.is_active = TRUE
                   AND (CAST(fn.max_capacity AS SIGNED) - CAST(fn.current_quantity AS SIGNED) - CAST(IFNULL(tt.reserved, 0) AS SIGNED)) > 0
-                ORDER BY available_spots DESC 
+                ORDER BY available_spots DESC, fn.node_id ASC
                 LIMIT 1
             """, (variety_id,))
             node_info = cursor.fetchone()
@@ -113,12 +116,17 @@ def receive_rfid_inoutbound():
             # 5. 트레이 상태 IN_TRANSIT(2) 변경
             cursor.execute("UPDATE trays SET tray_status = 2 WHERE nfc_uid = %s", (uid,))
 
+            # 6. 목적지 노드에 품종 정보 선제적 업데이트 (환경 제어 연동)
+            # 입고 작업이 생성됨과 동시에 해당 구역의 환경 기준을 품종에 맞춰 조정합니다.
+            cursor.execute("UPDATE farm_nodes SET current_variety_id = %s WHERE node_id = %s", (variety_id, target_node))
+
         conn.commit()
+        variety_display = f"{tray_info['variety_name']}({tray_info['crop_name']})"
         print(f"🤖 [배차 완료] {source_node} → {node_info['node_name']}({target_node}) (Task ID: {task_id})")
 
         return jsonify({
             "status": "success", 
-            "message": f"화분 {uid[-4:]} 입고 시작. 목적지: {node_info['node_name']}",
+            "message": f"{variety_display} 입고 시작. 목적지: {node_info['node_name']}",
             "task_id": task_id
         }), 200
 
