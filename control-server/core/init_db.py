@@ -22,11 +22,11 @@ def init_base_data():
             )
             c.execute(
                 "INSERT IGNORE INTO actuator_types (actuator_type_id, type_name) "
-                "VALUES (1, 'VAL'), (2, 'FAN'), (3, 'LED')"
+                "VALUES (0, 'MODE'), (1, 'PUMP'), (2, 'FAN'), (3, 'HEATER'), (4, 'LED')"
             )
             c.execute(
                 "INSERT IGNORE INTO trigger_sources (trigger_id, trigger_code, trigger_name) "
-                "VALUES (1, 'AUTO', '자동 로직')"
+                "VALUES (1, 'AUTO', '자동 로직'), (2, 'MANUAL', '수동 제어')"
             )
             c.execute(
                 "INSERT IGNORE INTO agv_status_codes (status_id, status_code, status_name) "

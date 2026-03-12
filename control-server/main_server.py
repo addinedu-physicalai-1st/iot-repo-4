@@ -32,6 +32,7 @@ from core.init_db import init_base_data
 from network.tcp_robot_server import tcp_robot_server
 from network.task_dispatcher import task_dispatcher_loop
 from network.udp_camera_server import udp_camera_server
+from network.terminal_cli import start_terminal_cli
 from domain.rfid_handler import rfid_bp
 from domain.robot_api import robot_bp
 from domain.environment_api import env_bp
@@ -132,6 +133,7 @@ if __name__ == '__main__':
     threading.Thread(target=tcp_robot_server, daemon=True).start()     # AGV TCP (포트 8000)
     threading.Thread(target=task_dispatcher_loop, daemon=True).start() # 자동 배차 (3초 주기)
     threading.Thread(target=udp_camera_server, daemon=True).start()    # ESP32-CAM UDP (포트 7070)
+    start_terminal_cli()                                              # 인터랙티브 CLI 가동 (:)
 
     try:
         app.run(host='0.0.0.0', port=flask_port, debug=False, use_reloader=False)

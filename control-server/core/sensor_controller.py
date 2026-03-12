@@ -15,6 +15,9 @@ latest_data = {}
 # 수동 제어 오버라이드 캐시 (대시보드에서 ON/OFF 시 ESP32로 명령 전달)
 manual_overrides = {}
 
+# 로그 출력 억제 플래그 (CLI 입력 중 사용)
+log_suppressed = False
+
 # ANSI 색상 코드
 COLOR_RESET = "\033[0m"
 COLOR_YELLOW = "\033[33m" # Standard Yellow
@@ -112,8 +115,8 @@ def process_sensor_and_control(p_id, node_id, dyn_ctrl_id, curr_temp, curr_humi,
                 if 'val' in override: command_val = override['val']
                 if 'fan' in override: command_fan = override['fan']
 
-            # 5. 정규화된 액추에이터 로그 (VAL=1, FAN=2, LED=3)
-            for a_type, cmd_key, state_val in [(1, 'val', command_val), (2, 'fan', command_fan), (3, 'led', command_led)]:
+            # 5. 정규화된 액추에이터 로그 (PUMP=1, FAN=2, LED=4)
+            for a_type, cmd_key, state_val in [(1, 'val', command_val), (2, 'fan', command_fan), (4, 'led', command_led)]:
                 if previous_states[cmd_key].get(node_id) != state_val:
                     previous_states[cmd_key][node_id] = state_val
 
@@ -150,7 +153,8 @@ def process_sensor_and_control(p_id, node_id, dyn_ctrl_id, curr_temp, curr_humi,
         disp_val = f"{COLOR_BLUE}{command_val}{COLOR_RESET}" if command_val.endswith("_ON") else command_val
         disp_fan = f"{COLOR_RED}{command_fan}{COLOR_RESET}" if command_fan.endswith("_ON") else command_fan
         
-        print(f"📡 [{node_id}] {log_suffix}온도:{curr_temp:4.1f}℃ | 습도:{curr_humi:4.1f}% | 조도:{curr_light:>4}{water_str} >> 📤 {disp_led}, {disp_val}, {disp_fan}")
+        if not log_suppressed:
+            print(f"📡 [{node_id}] {log_suffix}온도:{curr_temp:4.1f}℃ | 습도:{curr_humi:4.1f}% | 조도:{curr_light:>4}{water_str} >> 📤 {disp_led}, {disp_val}, {disp_fan}")
 
         latest_data[node_id] = {
             "temp": round(curr_temp, 1) if isinstance(curr_temp, (int, float)) else curr_temp,
@@ -170,6 +174,39 @@ def process_sensor_and_control(p_id, node_id, dyn_ctrl_id, curr_temp, curr_humi,
     finally:
         if conn:
             conn.close()
+
+
+def log_manual_actuator_to_db(node_id, act_id, state_val):
+    """CLI에서 호출되는 수동 제어 기록 저장 기능"""
+    kst_now = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=9)
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # 1. 제어기 ID (노드 ID와 1:1)
+            cursor.execute("SELECT controller_id FROM nursery_controllers WHERE node_id=%s", (node_id,))
+            ctrl = cursor.fetchone()
+            if not ctrl: return
+            c_id = ctrl['controller_id'] if isinstance(ctrl, dict) else ctrl[0]
+
+            # 2. 액추에이터 ID 확보
+            cursor.execute("SELECT actuator_id FROM nursery_actuators WHERE controller_id=%s AND actuator_type_id=%s", (c_id, act_id))
+            act = cursor.fetchone()
+            if not act:
+                cursor.execute("INSERT INTO nursery_actuators (controller_id, actuator_type_id, pin_number) VALUES (%s, %s, 0)", (c_id, act_id))
+                a_id = cursor.lastrowid
+            else:
+                a_id = act['actuator_id'] if isinstance(act, dict) else act[0]
+
+            # 3. 로그 저장 (Trigger 2 = MANUAL)
+            cursor.execute(
+                "INSERT INTO nursery_actuator_logs (actuator_id, state_value, trigger_id, logged_at) VALUES (%s, %s, 2, %s)",
+                (a_id, str(state_val), kst_now)
+            )
+        conn.commit()
+    except Exception as e:
+        print(f"⚠️ [Log Manual] 저장 에러: {e}")
+    finally:
+        conn.close()
 
 
 def load_latest_sensor_data_from_db():
