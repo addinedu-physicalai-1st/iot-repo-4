@@ -16,7 +16,7 @@ latest_data = {}
 manual_overrides = {}
 
 
-def process_sensor_and_control(p_id, node_id, dyn_ctrl_id, curr_temp, curr_humi, curr_light):
+def process_sensor_and_control(p_id, node_id, dyn_ctrl_id, curr_temp, curr_humi, curr_light, curr_water=0):
     """
     신규 스키마의 분리된 센서/구동기 테이블에 데이터를 안전하게 저장하고 제어값을 반환합니다.
     
@@ -47,8 +47,8 @@ def process_sensor_and_control(p_id, node_id, dyn_ctrl_id, curr_temp, curr_humi,
                 WHERE controller_id=%s
             """, (kst_now, dyn_ctrl_id))
 
-            # 2. 정규화된 센서 데이터 삽입 (Temp=1, Humi=2, Light=3)
-            for s_type, val in [(1, curr_temp), (2, curr_humi), (3, curr_light)]:
+            # 2. 정규화된 센서 데이터 삽입 (Temp=1, Humi=2, Light=3, Water=4)
+            for s_type, val in [(1, curr_temp), (2, curr_humi), (3, curr_light), (4, curr_water)]:
                 cursor.execute(
                     "SELECT sensor_id FROM nursery_sensors WHERE controller_id=%s AND sensor_type_id=%s",
                     (dyn_ctrl_id, s_type)
@@ -122,14 +122,15 @@ def process_sensor_and_control(p_id, node_id, dyn_ctrl_id, curr_temp, curr_humi,
         conn.commit()
 
         # 6. 로깅 및 캐시 업데이트
-        log_suffix = f"({'inbound' if p_id==10 else 'outbound'}) " if p_id in [10, 99] else ""
+        log_suffix = f"({'inbound' if p_id==1 else 'outbound'}) " if p_id==1 else ""
         int_light = int(curr_light) if isinstance(curr_light, (int, float)) else curr_light
-        print(f"📡 [{node_id}] {log_suffix}온도:{curr_temp}℃ | 습도:{curr_humi}% | 조도:{int_light:,} >> 📤 {command_led}, {command_val}, {command_fan}")
+        print(f"📡 [{node_id}] {log_suffix}온도:{curr_temp}℃ | 습도:{curr_humi}% | 조도:{int_light:,} | 수위:{curr_water}% >> 📤 {command_led}, {command_val}, {command_fan}")
 
         latest_data[node_id] = {
             "temp": round(curr_temp, 1) if isinstance(curr_temp, (int, float)) else curr_temp,
             "humi": round(curr_humi, 1) if isinstance(curr_humi, (int, float)) else curr_humi,
-            "light": int_light, "led": command_led, "val": command_val, "fan": command_fan,
+            "light": int_light, "water": curr_water, 
+            "led": command_led, "val": command_val, "fan": command_fan,
             "last_seen": kst_now.strftime('%H:%M:%S')
         }
         return command_led, command_val, command_fan

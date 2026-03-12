@@ -120,24 +120,24 @@ def handle_hardware_client(client_socket, addr):
                         if len(payload) > 0:
                             count = payload[0]
                             idx = 1
-                            temp = hum = light = 0
+                            temp = hum = light = water = 0
                             
                             for _ in range(count):
                                 if idx + 3 >= len(payload): break
                                 s_id = payload[idx]
-                                # 24bit signed int 변환 (대충)
+                                # 24bit signed int 변환
                                 val_bytes = bytes([0]) + payload[idx+1:idx+4]
                                 val = struct.unpack('>i', val_bytes)[0] / 100.0
                                 
                                 if s_id == 0x01: temp = val
                                 elif s_id == 0x02: hum = val
                                 elif s_id == 0x03: light = val * 100.0 # light는 스케일링 복구
+                                elif s_id == 0x04: water = val * 100.0 # water (%)
                                 idx += 4
                                 
                             # 노드 식별 및 DB 저장, 제어 로직
-                            # src_id가 0x11(정수 17)인 경우 identify_node 함수에서 "11"로 인식할 수 있게 16진수 문자열로 넘겨줍니다.
-                            p_id, node_id, dyn_ctrl_id = identify_node(f"{src_id:02X}")
-                            led, val, fan = process_sensor_and_control(p_id, node_id, dyn_ctrl_id, temp, hum, light)
+                            p_id, node_id, dyn_ctrl_id = identify_node(src_id)
+                            led, val, fan = process_sensor_and_control(p_id, node_id, dyn_ctrl_id, temp, hum, light, water)
                             
                             # 센서 데이터 수신 완료 ACK 전송
                             ack_payload = bytes([MSG_SENSOR_BATCH, seq])

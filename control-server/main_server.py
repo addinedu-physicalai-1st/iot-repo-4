@@ -72,7 +72,8 @@ def receive_data():
         p_id, node_id, dyn_ctrl_id,
         content.get('temperature', 0),
         content.get('humidity', 0),
-        content.get('light', 0)
+        content.get('light', 0),
+        content.get('water_level', 0)
     )
     return jsonify({"led": led, "val": val, "fan": fan}), 200
 
@@ -94,12 +95,12 @@ def handle_binary_data():
     raw_data = request.get_data()
     if len(raw_data) != 15:
         return "Invalid Length", 400
-    stx, c_id, count, _, temp_raw, hum, light, crc_rx, etx = struct.unpack("<BHHBhHHHB", raw_data)
+    stx, c_id, count, water, temp_raw, hum, light, crc_rx, etx = struct.unpack("<BHHBhHHHB", raw_data)
     if calculate_crc16(raw_data[1:12]) != crc_rx:
         return "CRC Failed", 400
 
     p_id, node_id, dyn_ctrl_id = identify_node(c_id)
-    led, val, fan = process_sensor_and_control(p_id, node_id, dyn_ctrl_id, temp_raw / 10.0, hum, light)
+    led, val, fan = process_sensor_and_control(p_id, node_id, dyn_ctrl_id, temp_raw / 10.0, hum, light, water)
     return f"{led},{val},{fan}", 200
 
 

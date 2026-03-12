@@ -18,7 +18,7 @@ def init_base_data():
             )
             c.execute(
                 "INSERT IGNORE INTO sensor_types (sensor_type_id, type_name, measure_target, unit) "
-                "VALUES (1, 'TEMP', '온도', 'C'), (2, 'HUMI', '습도', '%'), (3, 'LIGHT', '조도', 'Lux')"
+                "VALUES (1, 'TEMP', '온도', 'C'), (2, 'HUMI', '습도', '%'), (3, 'LIGHT', '조도', 'Lux'), (4, 'WATER', '수위', '%%')"
             )
             c.execute(
                 "INSERT IGNORE INTO actuator_types (actuator_type_id, type_name) "
