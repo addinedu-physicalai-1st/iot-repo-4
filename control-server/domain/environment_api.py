@@ -43,6 +43,7 @@ def get_latest_sensors():
             "temperature": data.get("temp", 0),
             "humidity": data.get("humi", 0),
             "light": data.get("light", 0),
+            "water": data.get("water", 0),
             "updated_at": data.get("last_updated", 0)
         }
     return jsonify({"ok": True, "sensors": response_data})

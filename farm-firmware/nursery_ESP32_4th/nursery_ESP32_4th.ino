@@ -51,11 +51,13 @@ unsigned long _lastHeartbeatMs = 0;
 
 // ─────────── 통신 및 하드웨어 ───────────
 HardwareSerial ArduinoSerial(2); // UART2 (RX=16, TX=17)
-const uint8_t MY_NODE_ID =0x11; // 0x10 ~ 0x1F
+const uint8_t MY_NODE_ID =0x13; // 0x10 ~ 0x1F
 
 #define DHTPIN 4
 #define DHTTYPE DHT11
 #define PHOTO_PIN 34
+#define WATER_LEVEL_PIN 35  // 수위 센서용 핀 추가 (Analog Input)
+
 DHT dht(DHTPIN, DHTTYPE);
 
 const unsigned long SENSOR_SEND_INTERVAL = 2000;
@@ -87,7 +89,7 @@ void sendTcpPacket(uint8_t msgType, uint8_t dstId, const uint8_t* payload, uint8
 }
 
 // ─────────── 센서 묶음 전송 (서버로) ───────────
-void sendSensorBatch(float temp, float hum, int light) {
+void sendSensorBatch_3(float temp, float hum, int light) {
     uint8_t pay[13];
     pay[0] = 3; // 센서 3개
     
@@ -110,6 +112,36 @@ void sendSensorBatch(float temp, float hum, int light) {
     pay[12] = l_val & 0xFF;
 
     sendTcpPacket(MSG_SENSOR_BATCH, ID_SERVER, pay, 13);
+}
+
+// ─────────── 센서 묶음 전송 (서버로) ───────────
+void sendSensorBatch_4(float temp, float hum, int light, int waterLevel) {
+    uint8_t pay[17]; // 센서 4개: 1 + (4 * 4) = 17 bytes 
+    pay[0] = 4;      // 센서 개수: 4개로 변경 
+    
+    // 1. 온도 (ID: 0x01)
+    int32_t t_val = (int32_t)(temp * 100); // 
+    pay[1] = 0x01;
+    pay[2] = (t_val >> 16) & 0xFF; pay[3] = (t_val >> 8) & 0xFF; pay[4] = t_val & 0xFF;
+
+    // 2. 습도 (ID: 0x02)
+    int32_t h_val = (int32_t)(hum * 100);
+    pay[5] = 0x02;
+    pay[6] = (h_val >> 16) & 0xFF; pay[7] = (h_val >> 8) & 0xFF; pay[8] = h_val & 0xFF;
+
+    // 3. 조도 (ID: 0x03)
+    int32_t l_val = (int32_t)(light);
+    pay[9] = 0x03;
+    pay[10] = (l_val >> 16) & 0xFF; pay[11] = (l_val >> 8) & 0xFF; pay[12] = l_val & 0xFF;
+
+    // 4. 수위 (ID: 0x04 추가)
+    int32_t w_val = (int32_t)(waterLevel); // 필요 시 수위도 * 100 가능 
+    pay[13] = 0x04; // 센서 고유 ID 0x04 할당
+    pay[14] = (w_val >> 16) & 0xFF; 
+    pay[15] = (w_val >> 8) & 0xFF; 
+    pay[16] = w_val & 0xFF;
+
+    sendTcpPacket(MSG_SENSOR_BATCH, ID_SERVER, pay, 17); // [cite: 38]
 }
 
 // ─────────── 명령 라우팅 ───────────
@@ -277,11 +309,13 @@ void loop() {
         if (_tcpClient.connected()) {
             float t = dht.readTemperature();
             float h = dht.readHumidity();
-            int l = analogRead(PHOTO_PIN);
-            
+            int l = analogRead(PHOTO_PIN) / 4;
+            int w = analogRead(WATER_LEVEL_PIN) / 5; // 수위 값 읽기 (0~4095)
+             
             if (!isnan(t) && !isnan(h)) {
-                sendSensorBatch(t, h, l);
+                sendSensorBatch_4(t, h, l, w); // 수위 값 추가 전달
             }
+
         }
     }
 }

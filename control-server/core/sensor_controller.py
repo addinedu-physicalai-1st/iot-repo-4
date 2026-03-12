@@ -122,14 +122,16 @@ def process_sensor_and_control(p_id, node_id, dyn_ctrl_id, curr_temp, curr_humi,
         conn.commit()
 
         # 6. 로깅 및 캐시 업데이트
-        log_suffix = f"({'inbound' if p_id==1 else 'outbound'}) " if p_id==1 else ""
+        log_suffix = f"({'inbound' if p_id==1 else 'outbound'}) " if p_id in [1, 99] else ""
         int_light = int(curr_light) if isinstance(curr_light, (int, float)) else curr_light
-        print(f"📡 [{node_id}] {log_suffix}온도:{curr_temp}℃ | 습도:{curr_humi}% | 조도:{int_light:,} | 수위:{curr_water}% >> 📤 {command_led}, {command_val}, {command_fan}")
+        display_water = round(curr_water / 10.0, 1) if isinstance(curr_water, (int, float)) else curr_water
+
+        print(f"📡 [{node_id}] {log_suffix}온도:{curr_temp}℃ | 습도:{curr_humi}% | 조도:{int_light:,} | 수위:{display_water}% >> 📤 {command_led}, {command_val}, {command_fan}")
 
         latest_data[node_id] = {
             "temp": round(curr_temp, 1) if isinstance(curr_temp, (int, float)) else curr_temp,
             "humi": round(curr_humi, 1) if isinstance(curr_humi, (int, float)) else curr_humi,
-            "light": int_light, "water": curr_water, 
+            "light": int_light, "water": display_water, 
             "led": command_led, "val": command_val, "fan": command_fan,
             "last_seen": kst_now.strftime('%H:%M:%S')
         }
