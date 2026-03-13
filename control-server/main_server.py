@@ -22,8 +22,9 @@ app.secret_key = secrets.token_hex(16)
 
 # 조용한 모드 (반복되는 HTTP 로그 숨김)
 log = logging.getLogger('werkzeug')
+from core.logger import web_log
 log.setLevel(logging.ERROR)
-print("🤫 [Quiet Mode] 조용한 모드로 서버를 시작합니다. (반복되는 HTTP 접속 로그 숨김)")
+web_log("🤫 [Quiet Mode] 조용한 모드로 서버를 시작합니다. (HTTP 로그 숨김)", "sys")
 
 # ─── 모듈 import ───
 from core.node_identifier import identify_node
@@ -32,6 +33,7 @@ from core.init_db import init_base_data
 from network.tcp_robot_server import tcp_robot_server
 from network.task_dispatcher import task_dispatcher_loop
 from network.udp_camera_server import udp_camera_server
+from network.terminal_cli import start_terminal_cli
 from domain.rfid_handler import rfid_bp
 from domain.robot_api import robot_bp
 from domain.environment_api import env_bp
@@ -102,9 +104,14 @@ def handle_binary_data():
 
     p_id, node_id, dyn_ctrl_id = identify_node(c_id)
     # 기존 바이너리 규격에는 수위(water)가 없으므로 0 혹은 None 전달
-    led, val, fan = process_sensor_and_control(p_id, node_id, dyn_ctrl_id, temp_raw / 10.0, hum, light, 0)
+    led, val, fan = process_sensor_and_control(p_id, node_id, dyn_ctrl_id, temp_raw / 10.0, hum, light, 0, count=count)
     return f"{led},{val},{fan}", 200
 
+
+@app.route('/api/system/logs')
+def get_system_logs():
+    from core.logger import sys_logger
+    return jsonify({"ok": True, "logs": sys_logger.get_logs()})
 
 # =====================================================================
 @app.route('/')
@@ -120,18 +127,19 @@ def index():
 if __name__ == '__main__':
     flask_port = 5001
     
-    print(f"🌿 Smart Farm 통합 서버가 시작됩니다. (Flask:{flask_port} / TCP:8000 / UDP:7070)")
+    web_log("🌿 Smart Farm 통합 서버가 시작됩니다. (Flask:5001 / TCP:8000 / UDP:7070)", "sys")
 
-    print("\n[INIT] DB 마스터 데이터 점검 중...")
+    web_log("[INIT] DB 마스터 데이터 점검 중...", "sys")
     init_base_data()
     
-    print("\n[INIT] 메모리 캐시 초기화 중...")
+    web_log("[INIT] 메모리 캐시 초기화 중...", "sys")
     load_latest_sensor_data_from_db()
 
     # 백그라운드 스레드 시작
     threading.Thread(target=tcp_robot_server, daemon=True).start()     # AGV TCP (포트 8000)
     threading.Thread(target=task_dispatcher_loop, daemon=True).start() # 자동 배차 (3초 주기)
     threading.Thread(target=udp_camera_server, daemon=True).start()    # ESP32-CAM UDP (포트 7070)
+    start_terminal_cli()                                               # 터미널 CLI (키보드 입력)
 
     try:
         app.run(host='0.0.0.0', port=flask_port, debug=False, use_reloader=False)

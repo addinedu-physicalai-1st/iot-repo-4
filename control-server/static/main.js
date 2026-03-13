@@ -20,11 +20,252 @@ document.addEventListener("DOMContentLoaded", () => {
     setInterval(pollRobotState, 1000);
     setInterval(pollCameraState, 2000);
     setInterval(pollRobotLogs, 5000);
+    setInterval(pollSystemLogs, 2000);
 
     // Initial fetch
     pollSensorData();
     pollRobotState();
+
+    // Load saved layout
+    loadLayout();
+    
+    // Init Drag & Drop for Edit Mode
+    initDraggable();
+
+    // Init Keyboard Shortcuts (Undo/Redo)
+    initKeyboardShortcuts();
 });
+
+// ==========================================
+// 0. Layout Editor (Edit Mode)
+// ==========================================
+let isEditMode = false;
+let draggedElement = null;
+let resizingElement = null;
+let activeHandle = null;
+let dragStartPosition = null;
+let offset = { x: 0, y: 0 };
+let initialSize = { w: 0, h: 0, l: 0, t: 0 };
+
+// Undo/Redo History
+let undoStack = [];
+let redoStack = [];
+
+function getCurrentLayout() {
+    const layout = {};
+    document.querySelectorAll('.track-node, .floating-camera, #track-legend, #action-footer').forEach(el => {
+        if (el.id) {
+            layout[el.id] = {
+                left: el.style.left,
+                top: el.style.top,
+                width: el.style.width,
+                height: el.style.height
+            };
+        }
+    });
+    return layout;
+}
+
+function applyLayout(layout) {
+    if (!layout) return;
+    Object.keys(layout).forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.style.left = layout[id].left;
+            el.style.top = layout[id].top;
+            if (layout[id].width) el.style.width = layout[id].width;
+            if (layout[id].height) el.style.height = layout[id].height;
+        }
+    });
+}
+
+function pushToHistory() {
+    const currentState = getCurrentLayout();
+    undoStack.push(JSON.stringify(currentState));
+    if (undoStack.length > 50) undoStack.shift(); // Limit history
+    redoStack = []; // Clear redo stack on new action
+}
+
+function undoLayout() {
+    if (undoStack.length <= 1) return; // Need at least 2 states to undo to previous
+    
+    const currentState = undoStack.pop();
+    redoStack.push(currentState);
+    
+    const prevState = JSON.parse(undoStack[undoStack.length - 1]);
+    applyLayout(prevState);
+    addLocalLog("🔙 실행 취소 (Undo)", "cmd-out");
+}
+
+function redoLayout() {
+    if (redoStack.length === 0) return;
+    
+    const nextState = redoStack.pop();
+    undoStack.push(nextState);
+    
+    applyLayout(JSON.parse(nextState));
+    addLocalLog("🔄 다시 실행 (Redo)", "cmd-out");
+}
+
+function initKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+        if (!isEditMode) return;
+        
+        if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+            e.preventDefault();
+            undoLayout();
+        } else if (e.ctrlKey && e.key.toLowerCase() === 'y') {
+            e.preventDefault();
+            redoLayout();
+        }
+    });
+}
+
+function toggleEditMode() {
+    isEditMode = !isEditMode;
+    document.body.classList.toggle('edit-mode', isEditMode);
+    document.getElementById('btn-edit-layout').classList.toggle('active', isEditMode);
+    document.getElementById('btn-edit-layout').innerText = isEditMode ? "👁️ 편집 종료" : "🛠️ 배치 편집";
+    
+    // Show/Hide Save Button
+    const saveBtn = document.getElementById('btn-save-layout');
+    if (isEditMode) saveBtn.classList.remove('hidden');
+    else saveBtn.classList.add('hidden');
+
+    if (isEditMode) {
+        // Capture initial state when entering edit mode
+        undoStack = [JSON.stringify(getCurrentLayout())];
+        redoStack = [];
+        addLocalLog("🔧 레이아웃 편집 모드 활성화. 요소를 드래그하여 이동하세요. (Ctrl+Z: 취소, Ctrl+Y: 복구)", "cmd-in");
+    }
+}
+
+function initDraggable() {
+    // Listen to the whole dashboard for drags
+    const panel = document.querySelector('.dashboard-container');
+    
+    panel.addEventListener('mousedown', (e) => {
+        if (!isEditMode) return;
+        
+        // Check for resize handle
+        const resizeHandle = e.target.closest('.resize-handle');
+        if (resizeHandle) {
+            resizingElement = resizeHandle.parentElement;
+            activeHandle = resizeHandle;
+            const rect = resizingElement.getBoundingClientRect();
+            const parentRect = resizingElement.parentElement.getBoundingClientRect();
+            
+            initialSize = {
+                w: resizingElement.offsetWidth,
+                h: resizingElement.offsetHeight,
+                l: rect.left - parentRect.left,
+                t: rect.top - parentRect.top,
+                x: e.clientX,
+                y: e.clientY
+            };
+            e.preventDefault();
+            return;
+        }
+
+        const target = e.target.closest('.track-node, .floating-camera, #track-legend, #action-footer');
+        if (target) {
+            draggedElement = target;
+            const rect = target.getBoundingClientRect();
+            
+            // 클릭 지점과 요소 왼쪽상단 사이의 오프셋 저장
+            offset.x = e.clientX - rect.left;
+            offset.y = e.clientY - rect.top;
+            
+            dragStartPosition = { 
+                left: target.style.left, 
+                top: target.style.top,
+                width: target.style.width,
+                height: target.style.height
+            };
+            e.preventDefault();
+        }
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isEditMode) return;
+
+        // Resize Logic
+        if (resizingElement && activeHandle) {
+            const dy = e.clientY - initialSize.y;
+            const dx = e.clientX - initialSize.x;
+            const hClass = activeHandle.classList;
+            
+            if (hClass.contains('top')) {
+                resizingElement.style.height = `${initialSize.h - dy}px`;
+                resizingElement.style.top = `${initialSize.t + dy}px`;
+            } 
+            else if (hClass.contains('bottom')) {
+                resizingElement.style.height = `${initialSize.h + dy}px`;
+            } 
+            else if (hClass.contains('right')) {
+                resizingElement.style.width = `${initialSize.w + dx}px`;
+            } 
+            else if (hClass.contains('left')) {
+                resizingElement.style.width = `${initialSize.w - dx}px`;
+                resizingElement.style.left = `${initialSize.l + dx}px`;
+            } 
+            else if (hClass.contains('corner')) {
+                resizingElement.style.width = `${initialSize.w + dx}px`;
+                resizingElement.style.height = `${initialSize.h + dy}px`;
+            }
+            return;
+        }
+
+        // Drag Logic
+        if (draggedElement) {
+            const parent = draggedElement.parentElement;
+            const parentRect = parent.getBoundingClientRect();
+
+            let x = e.clientX - parentRect.left - offset.x;
+            let y = e.clientY - parentRect.top - offset.y;
+            
+            if (draggedElement.classList.contains('track-node')) {
+                x += draggedElement.offsetWidth / 2;
+                y += draggedElement.offsetHeight / 2;
+            }
+
+            draggedElement.style.left = `${x}px`;
+            draggedElement.style.top = `${y}px`;
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        if ((draggedElement || resizingElement) && dragStartPosition) {
+            pushToHistory();
+        }
+        draggedElement = null;
+        resizingElement = null;
+        activeHandle = null;
+        dragStartPosition = null;
+    });
+}
+
+function saveLayout() {
+    const layout = getCurrentLayout();
+    localStorage.setItem('sfam_dashboard_layout', JSON.stringify(layout));
+    addLocalLog("💾 레이아웃 배치가 성공적으로 저장되었습니다.", "cmd-in");
+    
+    // 편집 모드 종료
+    toggleEditMode();
+}
+
+function loadLayout() {
+    const saved = localStorage.getItem('sfam_dashboard_layout');
+    if (!saved) return;
+
+    try {
+        const layout = JSON.parse(saved);
+        applyLayout(layout);
+        console.log("Layout loaded from storage.");
+    } catch (e) {
+        console.error("Layout load failed:", e);
+    }
+}
 
 // ==========================================
 // 1. Data Polling: Nursery Sensors
@@ -41,15 +282,66 @@ function pollSensorData() {
                         envBox.querySelector('.v.temp').innerText = sData.temperature;
                         envBox.querySelector('.v.hum').innerText = sData.humidity;
                         envBox.querySelector('.v.lux').innerText = sData.light;
+                        
+                        // 모드 상태에 따른 시각적 표시 (Manual일 때 배경 강조 등)
+                        const isManual = sData.mode && sData.mode.includes('OFF');
+                        const nodeElement = envBox.parentElement;
+                        if (isManual) {
+                            nodeElement.classList.add('manual-mode-active');
+                        } else {
+                            nodeElement.classList.remove('manual-mode-active');
+                        }
+
+                        // 모달이 열려있다면 데이터 동기화
+                        syncNodeModal(nodeId, sData);
 
                         // Flash border to indicate data arrival
-                        const nodeElement = envBox.parentElement;
                         nodeElement.style.borderColor = "rgba(66, 211, 146, 0.8)";
                         setTimeout(() => nodeElement.style.borderColor = "", 500);
                     }
                 });
             }
         }).catch(err => console.error("Sensor fetch err:", err));
+}
+
+function syncNodeModal(nodeId, sData) {
+    const modal = document.getElementById('node-modal');
+    if (modal.classList.contains('hidden')) return;
+
+    // 현재 모달에 표시된 노드 확인
+    const currentModalTitle = document.getElementById('modal-title').innerText;
+    if (!currentModalTitle.toLowerCase().includes(nodeId.toLowerCase())) return;
+
+    // 1. 모드 동기화 (MODE_ON=Auto, MODE_OFF=Manual)
+    const isAuto = sData.mode && sData.mode.includes('ON');
+    const modeSwitch = document.getElementById('ctrl-mode');
+    if (modeSwitch && modeSwitch.checked !== isAuto) {
+        modeSwitch.checked = isAuto;
+        updateControlStates();
+    }
+
+    // 2. 구동기 상태 동기화 (수동 모드일 때만 혹은 참고용으로)
+    const devices = { 'fan': 'fan', 'pump': 'pump', 'heater': 'heater' };
+    Object.keys(devices).forEach(dev => {
+        const sw = document.getElementById(`ctrl-${dev}`);
+        if (sw) {
+            const isOn = sData[dev] && sData[dev].includes('ON');
+            if (sw.checked !== isOn) sw.checked = isOn;
+        }
+    });
+
+    // 3. LED 동기화
+    if (sData.led && sData.led.startsWith('LED_')) {
+        const val = parseInt(sData.led.split('_')[1]) || 0;
+        const ledRange = document.getElementById('ctrl-led-range');
+        const ledNum = document.getElementById('ctrl-led-num');
+        
+        // 사용자가 슬라이더를 조작 중이지 않을 때만 업데이트 (간단한 체크)
+        if (document.activeElement !== ledRange && document.activeElement !== ledNum) {
+            if (ledRange) ledRange.value = val;
+            if (ledNum) ledNum.value = val;
+        }
+    }
 }
 
 // ==========================================
@@ -313,9 +605,40 @@ function addLocalLog(msg, cssClass) {
 }
 
 // ==========================================
+// 4. System Terminal Log Polling
+// ==========================================
+let lastLogCount = 0;
+
+function pollSystemLogs() {
+    fetch('/api/system/logs')
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok && data.logs) {
+                // 로그 위치가 변경되지 않았으면 업데이트 건너뜀 (성능 최적화)
+                if (data.logs.length === lastLogCount) return;
+                
+                const container = document.getElementById('terminal-log-content');
+                if (!container) return;
+
+                // 새 로그 렌더링
+                container.innerHTML = data.logs.map(log => {
+                    const typeClass = log.type || 'sys';
+                    return `<div class="log-line ${typeClass}"><span class="time">[${log.time}]</span>${log.msg}</div>`;
+                }).join('');
+
+                // 스크롤 최하단 유지
+                container.scrollTop = container.scrollHeight;
+                lastLogCount = data.logs.length;
+            }
+        }).catch(() => { });
+}
+
+// ==========================================
 // Modal Actions
 // ==========================================
 function openNodeModal(nodeId) {
+    if (isEditMode) return; // 배치 편집 중에는 상세 창을 띄우지 않음
+    
     document.getElementById('modal-title').innerText = `상세 관제: ${nodeId.toUpperCase()}`;
     document.getElementById('node-modal').classList.remove('hidden');
 

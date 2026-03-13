@@ -117,7 +117,7 @@ python monitor_app.py s12    # 특정 노드 지정
 DB_HOST=3.35.24.94
 DB_USER=root
 DB_PASSWORD=실제비밀번호
-DB_NAME=sfam_db
+DB_NAME=sfam_db_backup
 FLASK_PORT=5001
 TCP_PORT=8000
 ```

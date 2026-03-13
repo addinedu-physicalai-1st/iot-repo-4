@@ -25,6 +25,7 @@
                 <span class="status-indicator online"></span>
                 <span class="server-status">서버 연결됨</span>
                 <div class="user-profile">
+                    <button id="btn-edit-layout" class="btn-edit-toggle" onclick="toggleEditMode()">🛠️ 배치 편집</button>
                     <span id="current-user">admin</span>
                     <a href="/logout" class="btn-logout">로그아웃</a>
                 </div>
@@ -40,7 +41,7 @@
             <section class="panel track-panel">
                 <div class="panel-header">
                     <h2>AGV & 물류 트랙 관제</h2>
-                    <div class="legend">
+                    <div id="track-legend" class="legend">
                         <span class="legend-item">
                             <div class="dot agv"></div>AGV 로봇🚚
                         </span>
@@ -49,118 +50,133 @@
                         </span>
                     </div>
                 </div>
-
                 <div class="track-container">
-                    <!-- SVG Track Background -->
-                    <svg class="track-lines" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-                        <!-- A line: a01-a02-a03-a04 (Y=50%) -->
-                        <line x1="10%" y1="50%" x2="90%" y2="50%" stroke="#30363d" stroke-width="4"
-                            stroke-dasharray="10,10" />
-                        <!-- S horiz line: Y=30% -->
-                        <line x1="20%" y1="30%" x2="60%" y2="30%" stroke="#30363d" stroke-width="4"
-                            stroke-dasharray="10,10" />
-                        <!-- S vert lines -->
-                        <line x1="20%" y1="10%" x2="20%" y2="30%" stroke="#30363d" stroke-width="4"
-                            stroke-dasharray="10,10" />
-                        <line x1="40%" y1="10%" x2="40%" y2="50%" stroke="#30363d" stroke-width="4"
-                            stroke-dasharray="10,10" />
-                        <line x1="60%" y1="10%" x2="60%" y2="30%" stroke="#30363d" stroke-width="4"
-                            stroke-dasharray="10,10" />
-                        <!-- R horiz line: Y=70% -->
-                        <line x1="40%" y1="70%" x2="80%" y2="70%" stroke="#30363d" stroke-width="4"
-                            stroke-dasharray="10,10" />
-                        <!-- R vert lines -->
-                        <line x1="40%" y1="70%" x2="40%" y2="90%" stroke="#30363d" stroke-width="4"
-                            stroke-dasharray="10,10" />
-                        <line x1="60%" y1="50%" x2="60%" y2="90%" stroke="#30363d" stroke-width="4"
-                            stroke-dasharray="10,10" />
-                        <line x1="80%" y1="70%" x2="80%" y2="90%" stroke="#30363d" stroke-width="4"
-                            stroke-dasharray="10,10" />
+                    <!-- Map Scroll Wrapper -->
+                    <div class="track-scroll-container">
+                        <div class="track-content-wrapper">
+                            <!-- SVG Track Background -->
+                            <svg class="track-lines" width="1000" height="600" viewBox="0 0 1000 600"
+                                xmlns="http://www.w3.org/2000/svg">
+                                <!-- A line: a01-a02-a03-a04 (Y=50% -> 300) -->
+                                <line x1="100" y1="300" x2="900" y2="300" stroke="#30363d" stroke-width="4"
+                                    stroke-dasharray="10,10" />
+                                <!-- S horiz line: Y=30% -->
+                                <line x1="200" y1="180" x2="600" y2="180" stroke="#30363d" stroke-width="4"
+                                    stroke-dasharray="10,10" />
+                                <!-- S vert lines -->
+                                <line x1="200" y1="60" x2="200" y2="180" stroke="#30363d" stroke-width="4"
+                                    stroke-dasharray="10,10" />
+                                <line x1="400" y1="60" x2="400" y2="300" stroke="#30363d" stroke-width="4"
+                                    stroke-dasharray="10,10" />
+                                <line x1="600" y1="60" x2="600" y2="180" stroke="#30363d" stroke-width="4"
+                                    stroke-dasharray="10,10" />
+                                <!-- R horiz line: Y=70% -->
+                                <line x1="400" y1="420" x2="800" y2="420" stroke="#30363d" stroke-width="4"
+                                    stroke-dasharray="10,10" />
+                                <!-- R vert lines -->
+                                <line x1="400" y1="420" x2="400" y2="540" stroke="#30363d" stroke-width="4"
+                                    stroke-dasharray="10,10" />
+                                <line x1="600" y1="300" x2="600" y2="540" stroke="#30363d" stroke-width="4"
+                                    stroke-dasharray="10,10" />
+                                <line x1="800" y1="420" x2="800" y2="540" stroke="#30363d" stroke-width="4"
+                                    stroke-dasharray="10,10" />
 
-                        <!-- AGV 활성 경로 오버레이 (PathFinder.cpp 그래프 기준) -->
-                        <!-- 메인 라인: A01-A02-A03-A04 -->
-                        <line class="agv-active-path" id="path-a01-a02" x1="10%" y1="50%" x2="40%" y2="50%" />
-                        <line class="agv-active-path" id="path-a02-a03" x1="40%" y1="50%" x2="60%" y2="50%" />
-                        <line class="agv-active-path" id="path-a03-a04" x1="60%" y1="50%" x2="90%" y2="50%" />
-                        <!-- S-Zone 분기: A02 ↔ S06 (상단 진입점) -->
-                        <line class="agv-active-path" id="path-a02-s06" x1="40%" y1="50%" x2="40%" y2="30%" />
-                        <!-- S 수평: S05-S06-S07 -->
-                        <line class="agv-active-path" id="path-s05-s06" x1="20%" y1="30%" x2="40%" y2="30%" />
-                        <line class="agv-active-path" id="path-s06-s07" x1="40%" y1="30%" x2="60%" y2="30%" />
-                        <!-- S 보관실 진입: S05↔S11, S06↔S12, S07↔S13 -->
-                        <line class="agv-active-path" id="path-s05-s11" x1="20%" y1="30%" x2="20%" y2="10%" />
-                        <line class="agv-active-path" id="path-s06-s12" x1="40%" y1="30%" x2="40%" y2="10%" />
-                        <line class="agv-active-path" id="path-s07-s13" x1="60%" y1="30%" x2="60%" y2="10%" />
-                        <!-- R-Zone 분기: A03 ↔ R09 (하단 진입점) -->
-                        <line class="agv-active-path" id="path-a03-r09" x1="60%" y1="50%" x2="60%" y2="70%" />
-                        <!-- R 수평: R08-R09-R10 -->
-                        <line class="agv-active-path" id="path-r08-r09" x1="40%" y1="70%" x2="60%" y2="70%" />
-                        <line class="agv-active-path" id="path-r09-r10" x1="60%" y1="70%" x2="80%" y2="70%" />
-                        <!-- R 보관실 진입: R08↔R14, R09↔R15, R10↔R16 -->
-                        <line class="agv-active-path" id="path-r08-r14" x1="40%" y1="70%" x2="40%" y2="90%" />
-                        <line class="agv-active-path" id="path-r09-r15" x1="60%" y1="70%" x2="60%" y2="90%" />
-                        <line class="agv-active-path" id="path-r10-r16" x1="80%" y1="70%" x2="80%" y2="90%" />
-                    </svg>
+                                <!-- AGV 활성 경로 오버레이 (PathFinder.cpp 그래프 기준) -->
+                                <!-- 메인 라인: A01-A02-A03-A04 -->
+                                <line class="agv-active-path" id="path-a01-a02" x1="100" y1="300" x2="400" y2="300" />
+                                <line class="agv-active-path" id="path-a02-a03" x1="400" y1="300" x2="600" y2="300" />
+                                <line class="agv-active-path" id="path-a03-a04" x1="600" y1="300" x2="900" y2="300" />
+                                <!-- S-Zone 분기: A02 ↔ S06 (상단 진입점) -->
+                                <line class="agv-active-path" id="path-a02-s06" x1="400" y1="300" x2="400" y2="180" />
+                                <!-- S 수평: S05-S06-S07 -->
+                                <line class="agv-active-path" id="path-s05-s06" x1="200" y1="180" x2="400" y1="180" />
+                                <line class="agv-active-path" id="path-s06-s07" x1="400" y1="180" x2="600" y1="180" />
+                                <!-- S 보관실 진입: S05↔S11, S06↔S12, S07↔S13 -->
+                                <line class="agv-active-path" id="path-s05-s11" x1="200" y1="180" x2="200" y2="60" />
+                                <line class="agv-active-path" id="path-s06-s12" x1="400" y1="180" x2="400" y2="60" />
+                                <line class="agv-active-path" id="path-s07-s13" x1="600" y1="180" x2="600" y2="60" />
+                                <!-- R-Zone 분기: A03 ↔ R09 (하단 진입점) -->
+                                <line class="agv-active-path" id="path-a03-r09" x1="600" y1="300" x2="600" y2="420" />
+                                <!-- R 수평: R08-R09-R10 -->
+                                <line class="agv-active-path" id="path-r08-r09" x1="400" y1="420" x2="600" y2="420" />
+                                <line class="agv-active-path" id="path-r09-r10" x1="600" y1="420" x2="800" y2="420" />
+                                <!-- R 보관실 진입: R08↔R14, R09↔R15, R10↔R16 -->
+                                <line class="agv-active-path" id="path-r08-r14" x1="400" y1="420" x2="400" y2="540" />
+                                <line class="agv-active-path" id="path-r09-r15" x1="600" y1="420" x2="600" y2="540" />
+                                <line class="agv-active-path" id="path-r10-r16" x1="800" y1="420" x2="800" y2="540" />
+                            </svg>
 
-                    <!-- Inbound / Outbound -->
-                    <div class="track-node station inbound" id="node-a01" data-label="A01 (입고장)">
-                        <div class="plant-indicator hidden">🪴</div>
-                    </div>
-                    <div class="track-node station outbound" id="node-a04" data-label="A04 (출고장)">
-                        <div class="plant-indicator hidden">🪴</div>
-                    </div>
+                            <!-- Inbound / Outbound -->
+                            <div class="track-node station inbound" id="node-a01" data-label="A01 (입고장)"
+                                style="left: 100px; top: 300px;">
+                                <div class="plant-indicator hidden">🪴</div>
+                            </div>
+                            <div class="track-node station outbound" id="node-a04" data-label="A04 (출고장)"
+                                style="left: 900px; top: 300px;">
+                                <div class="plant-indicator hidden">🪴</div>
+                            </div>
 
-                    <!-- Path Nodes -->
-                    <div class="track-node" id="node-a02" data-label="A02"></div>
-                    <div class="track-node" id="node-a03" data-label="A03"></div>
+                            <!-- Path Nodes -->
+                            <div class="track-node" id="node-a02" data-label="A02" style="left: 400px; top: 300px;">
+                            </div>
+                            <div class="track-node" id="node-a03" data-label="A03" style="left: 600px; top: 300px;">
+                            </div>
 
-                    <!-- S Nodes (Nursery) -->
-                    <div class="track-node" id="node-s05" data-label="S05"></div>
-                    <div class="track-node" id="node-s06" data-label="S06"></div>
-                    <div class="track-node" id="node-s07" data-label="S07"></div>
-                    <div class="track-node env-node storage-node" id="node-s11" onclick="openNodeModal('s11')"
-                        data-label="S11">
-                        <div class="env-data" id="env-s11">🌡️ <span class="v temp">--</span>℃<br>💧 <span
-                                class="v hum">--</span>%<br>☀️ <span class="v lux">--</span>lx</div>
-                    </div>
-                    <div class="track-node env-node storage-node" id="node-s12" onclick="openNodeModal('s12')"
-                        data-label="S12">
-                        <div class="env-data" id="env-s12">🌡️ <span class="v temp">--</span>℃<br>💧 <span
-                                class="v hum">--</span>%<br>☀️ <span class="v lux">--</span>lx</div>
-                    </div>
-                    <div class="track-node env-node storage-node" id="node-s13" onclick="openNodeModal('s13')"
-                        data-label="S13">
-                        <div class="env-data" id="env-s13">🌡️ <span class="v temp">--</span>℃<br>💧 <span
-                                class="v hum">--</span>%<br>☀️ <span class="v lux">--</span>lx</div>
-                    </div>
+                            <!-- S Nodes (Nursery) -->
+                            <div class="track-node" id="node-s05" data-label="S05" style="left: 200px; top: 180px;">
+                            </div>
+                            <div class="track-node" id="node-s06" data-label="S06" style="left: 400px; top: 180px;">
+                            </div>
+                            <div class="track-node" id="node-s07" data-label="S07" style="left: 600px; top: 180px;">
+                            </div>
+                            <div class="track-node env-node storage-node" id="node-s11" onclick="openNodeModal('s11')"
+                                data-label="S11" style="left: 200px; top: 60px;">
+                                <div class="env-data" id="env-s11">🌡️ <span class="v temp">--</span>℃<br>💧 <span
+                                        class="v hum">--</span>%<br>☀️ <span class="v lux">--</span>lx</div>
+                            </div>
+                            <div class="track-node env-node storage-node" id="node-s12" onclick="openNodeModal('s12')"
+                                data-label="S12" style="left: 400px; top: 60px;">
+                                <div class="env-data" id="env-s12">🌡️ <span class="v temp">--</span>℃<br>💧 <span
+                                        class="v hum">--</span>%<br>☀️ <span class="v lux">--</span>lx</div>
+                            </div>
+                            <div class="track-node env-node storage-node" id="node-s13" onclick="openNodeModal('s13')"
+                                data-label="S13" style="left: 600px; top: 60px;">
+                                <div class="env-data" id="env-s13">🌡️ <span class="v temp">--</span>℃<br>💧 <span
+                                        class="v hum">--</span>%<br>☀️ <span class="v lux">--</span>lx</div>
+                            </div>
 
-                    <!-- R Nodes (Radish) -->
-                    <div class="track-node" id="node-r08" data-label="R08"></div>
-                    <div class="track-node" id="node-r09" data-label="R09"></div>
-                    <div class="track-node" id="node-r10" data-label="R10"></div>
-                    <div class="track-node env-node storage-node" id="node-r14" onclick="openNodeModal('r14')"
-                        data-label="R14">
-                        <div class="env-data" id="env-r14">🌡️ <span class="v temp">--</span>℃<br>💧 <span
-                                class="v hum">--</span>%<br>☀️ <span class="v lux">--</span>lx</div>
-                    </div>
-                    <div class="track-node env-node storage-node" id="node-r15" onclick="openNodeModal('r15')"
-                        data-label="R15">
-                        <div class="env-data" id="env-r15">🌡️ <span class="v temp">--</span>℃<br>💧 <span
-                                class="v hum">--</span>%<br>☀️ <span class="v lux">--</span>lx</div>
-                    </div>
-                    <div class="track-node env-node storage-node" id="node-r16" onclick="openNodeModal('r16')"
-                        data-label="R16">
-                        <div class="env-data" id="env-r16">🌡️ <span class="v temp">--</span>℃<br>💧 <span
-                                class="v hum">--</span>%<br>☀️ <span class="v lux">--</span>lx</div>
-                    </div>
+                            <!-- R Nodes (Radish) -->
+                            <div class="track-node" id="node-r08" data-label="R08" style="left: 400px; top: 420px;">
+                            </div>
+                            <div class="track-node" id="node-r09" data-label="R09" style="left: 600px; top: 420px;">
+                            </div>
+                            <div class="track-node" id="node-r10" data-label="R10" style="left: 800px; top: 420px;">
+                            </div>
+                            <div class="track-node env-node storage-node" id="node-r14" onclick="openNodeModal('r14')"
+                                data-label="R14" style="left: 400px; top: 540px;">
+                                <div class="env-data" id="env-r14">🌡️ <span class="v temp">--</span>℃<br>💧 <span
+                                        class="v hum">--</span>%<br>☀️ <span class="v lux">--</span>lx</div>
+                            </div>
+                            <div class="track-node env-node storage-node" id="node-r15" onclick="openNodeModal('r15')"
+                                data-label="R15" style="left: 600px; top: 540px;">
+                                <div class="env-data" id="env-r15">🌡️ <span class="v temp">--</span>℃<br>💧 <span
+                                        class="v hum">--</span>%<br>☀️ <span class="v lux">--</span>lx</div>
+                            </div>
+                            <div class="track-node env-node storage-node" id="node-r16" onclick="openNodeModal('r16')"
+                                data-label="R16" style="left: 800px; top: 540px;">
+                                <div class="env-data" id="env-r16">🌡️ <span class="v temp">--</span>℃<br>💧 <span
+                                        class="v hum">--</span>%<br>☀️ <span class="v lux">--</span>lx</div>
+                            </div>
 
-                    <!-- AGV Robot Element (Moves across nodes) -->
-                    <div id="agv-robot" class="agv-marker hidden">
-                        <div class="agv-body">🚚</div>
-                        <div class="agv-load hidden">🪴</div>
-                        <div class="agv-tooltip">
-                            <div class="id">R01</div>
-                            <div class="bat">🔋 <span>--</span>%</div>
+                            <!-- AGV Robot Element (Moves across nodes) -->
+                            <div id="agv-robot" class="agv-marker hidden">
+                                <div class="agv-body">🚚</div>
+                                <div class="agv-load hidden">🪴</div>
+                                <div class="agv-tooltip">
+                                    <div class="id">R01</div>
+                                    <div class="bat">🔋 <span>--</span>%</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -176,20 +192,34 @@
                         </div>
                     </div>
 
-                    <div class="floating-controls">
-                        <button class="btn btn-action" onclick="openGotoModal()"
-                            style="font-size: 14px; padding: 12px;">🎯 로봇 목적지 전송</button>
-                        <button class="btn btn-action" onclick="sendArmCommand('INBOUND_PICKUP')"
-                            style="font-size: 14px; padding: 12px; background: linear-gradient(135deg, #238636, #2ea043);">📦 입고명령</button>
-                        <button class="btn btn-secondary" onclick="openFullLogsModal()">📋 전체 작업 로그</button>
-                        <button class="btn btn-danger" onclick="emergencyStop()">🚨 시스템 비상 정지</button>
-                    </div>
-
-
                 </div>
-
             </section>
         </main>
+
+        <!-- Fixed Footer Action Bar -->
+        <footer id="action-footer" class="action-footer glass-panel">
+            <div class="resize-handle top"></div>
+            <div class="resize-handle right"></div>
+            <div class="resize-handle left"></div>
+            <div class="resize-handle corner"></div>
+            <div class="action-container">
+                <button id="btn-save-layout" class="btn-footer action gold hidden" onclick="saveLayout()">💾 배치
+                    저장</button>
+                <button class="btn-footer action" onclick="openGotoModal()">🎯 로봇 목적지 전송</button>
+                <button class="btn-footer action green" onclick="sendArmCommand('INBOUND_PICKUP')">📦 입고명령</button>
+                <button class="btn-footer action blue" onclick="sendArmCommand('U_TURN_TEST')">🔄 U턴 테스트</button>
+                <button class="btn-footer secondary" onclick="openFullLogsModal()">📋 전체 작업 로그</button>
+                <button class="btn-footer danger" onclick="emergencyStop()">🚨 시스템 비상 정지</button>
+            </div>
+
+            <!-- Real-time System Terminal Log -->
+            <div id="system-terminal-log" class="system-log-display">
+                <div class="terminal-header">💻 System Real-time Terminal Log</div>
+                <div id="terminal-log-content" class="terminal-body">
+                    <div class="log-line sys">연결 대기 중...</div>
+                </div>
+            </div>
+        </footer>
     </div>
 
     <!-- Node Detail Modal (Nursery Section) -->
@@ -212,19 +242,26 @@
                 <div class="modal-controls">
                     <h3>환경 제어 (Auto/Manual)</h3>
                     <div class="control-grid">
-                        <div class="control-item mode-toggle" style="grid-column: 1 / -1; margin-bottom: 10px; background: rgba(88, 166, 255, 0.1); padding: 10px; border-radius: 8px;">
+                        <div class="control-item mode-toggle"
+                            style="grid-column: 1 / -1; margin-bottom: 10px; background: rgba(88, 166, 255, 0.1); padding: 10px; border-radius: 8px;">
                             <label style="color: #58a6ff; font-weight: bold;">[공통] 자동 제어 모드</label>
                             <label class="switch">
                                 <input type="checkbox" id="ctrl-mode" onchange="toggleDevice('mode')">
                                 <span class="slider round"></span>
                             </label>
                         </div>
-                        <div class="control-item led-control-item" style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: flex-start;">
+                        <div class="control-item led-control-item"
+                            style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: flex-start;">
                             <label style="margin-bottom: 5px;">LED 밝기 수동 제어 (0~100)</label>
                             <div style="display: flex; gap: 10px; width: 100%; align-items: center;">
-                                <input type="range" id="ctrl-led-range" min="0" max="100" value="0" style="flex-grow: 1;" oninput="document.getElementById('ctrl-led-num').value=this.value">
-                                <input type="number" id="ctrl-led-num" min="0" max="100" value="0" style="width: 60px; background: #30363d; color: white; border: 1px solid #484f58; border-radius: 4px; padding: 4px; text-align: center;" oninput="document.getElementById('ctrl-led-range').value=this.value">
-                                <button id="btn-set-led" onclick="setLedValue()" style="background: #238636; color: white; border: none; border-radius: 4px; padding: 4px 12px; font-weight: bold; cursor: pointer;">적용</button>
+                                <input type="range" id="ctrl-led-range" min="0" max="100" value="0"
+                                    style="flex-grow: 1;"
+                                    oninput="document.getElementById('ctrl-led-num').value=this.value">
+                                <input type="number" id="ctrl-led-num" min="0" max="100" value="0"
+                                    style="width: 60px; background: #30363d; color: white; border: 1px solid #484f58; border-radius: 4px; padding: 4px; text-align: center;"
+                                    oninput="document.getElementById('ctrl-led-range').value=this.value">
+                                <button id="btn-set-led" onclick="setLedValue()"
+                                    style="background: #238636; color: white; border: none; border-radius: 4px; padding: 4px 12px; font-weight: bold; cursor: pointer;">적용</button>
                             </div>
                         </div>
                         <div class="control-item">

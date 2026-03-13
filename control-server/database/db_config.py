@@ -8,7 +8,7 @@ db_config_settings = {
     "host": "3.35.24.94",
     "user": "root",
     "password": "Sung!10292748",
-    "database": "sfam_db",
+    "database": "sfam_db_backup",
     "charset": "utf8mb4",
     "cursorclass": pymysql.cursors.DictCursor,
     "connect_timeout": 5

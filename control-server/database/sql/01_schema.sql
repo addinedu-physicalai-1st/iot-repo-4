@@ -2,11 +2,11 @@
 --  File    : 01_schema.sql
 -- ============================================================
 
-CREATE DATABASE IF NOT EXISTS sfam_db
+CREATE DATABASE IF NOT EXISTS sfam_db_backup
   CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
 
-USE sfam_db;
+USE sfam_db_backup;
 
 SET FOREIGN_KEY_CHECKS = 0;
 

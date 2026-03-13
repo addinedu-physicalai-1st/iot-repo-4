@@ -10,6 +10,7 @@ from datetime import datetime
 from database.db_config import get_db_connection
 from core.node_identifier import identify_node
 from core.sensor_controller import latest_data, process_sensor_and_control
+from core.logger import web_log
 from network.sfam_protocol import (
     SfamParser, build_packet, MSG_HEARTBEAT_REQ, MSG_HEARTBEAT_ACK,
     MSG_AGV_TELEMETRY, MSG_SENSOR_BATCH, MSG_RFID_EVENT, ID_SERVER, MSG_AGV_TASK_CMD
@@ -28,7 +29,7 @@ def send_actuator_command(node_id: str, actuator_id: int, value: int) -> bool:
     """
     node_key = node_id.lower()
     if node_key not in active_tcp_connections:
-        print(f"⚠️ [TCP Server] 노드 {node_key}가 현재 오프라인입니다. 제어 명령 전송 실패.")
+        web_log(f"⚠️ [TCP Server] 노드 {node_key}가 현재 오프라인입니다. 제어 명령 전송 실패.", "sys")
         return False
         
     client_socket = active_tcp_connections[node_key]
@@ -52,7 +53,7 @@ def send_actuator_command(node_id: str, actuator_id: int, value: int) -> bool:
 
 def handle_hardware_client(client_socket, addr):
     """하드웨어 TCP 클라이언트 (바이너리 프로토콜) 수신 스레드"""
-    print(f"📡 [TCP Server] 하드웨어 접속: {addr}")
+    web_log(f"📡 [TCP Server] 하드웨어 접속: {addr}", "sys")
     
     parser = SfamParser()
     client_id = None
@@ -72,23 +73,26 @@ def handle_hardware_client(client_socket, addr):
                     seq = packet['seq']
                     payload = packet['payload']
                     
-                    if not client_id:
-                        client_id = f"0x{src_id:02X}"
+                    # Register or update connection mapping for this src_id
+                    client_id = f"0x{src_id:02X}"
+                    if client_id not in active_tcp_connections:
                         active_tcp_connections[client_id] = client_socket
-                        
-                        # AGV 매핑 (0x01 등 로봇 ID일 경우 'R01' 등으로도 등록)
-                        if src_id < 0x10:  # 로봇은 0x01~0x0F 대역 사용
-                            agv_key = "R01" if src_id == 0x01 else f"R{src_id:02d}"
+                    
+                    # AGV 매핑 (0x01 등 로봇 ID일 경우 'R01' 등으로도 등록)
+                    if src_id < 0x10:  # 로봇은 0x01~0x0F 대역 사용
+                        agv_key = "R01" if src_id == 0x01 else f"R{src_id:02d}"
+                        if agv_key not in active_tcp_connections:
                             active_tcp_connections[agv_key] = client_socket
-                            display_name = f"[{agv_key}]"
-                        else:
-                            _, node_id, _ = identify_node(src_id)
-                            if node_id:
-                                node_key = node_id.lower()
+                        display_name = f"[{agv_key}]"
+                    else:
+                        _, node_id, _ = identify_node(src_id)
+                        if node_id:
+                            node_key = node_id.lower()
+                            if node_key not in active_tcp_connections:
                                 active_tcp_connections[node_key] = client_socket
-                                display_name = f"[{node_key.upper()}]"
-                            else:
-                                display_name = f"[{client_id}]"
+                            display_name = f"[{node_id.upper()}]"
+                        else:
+                            display_name = f"[{client_id}]"
                             
                     # 1. 하트비트 요청 (0x01)
                     if msg_type == MSG_HEARTBEAT_REQ:
@@ -181,7 +185,7 @@ def handle_hardware_client(client_socket, addr):
                             p_id, node_id, dyn_ctrl_id = identify_node(src_id)
                             
                             # 로직 통합: process_sensor_and_control 호출 (DB 저장 및 제어값 계산 포함)
-                            process_sensor_and_control(p_id, node_id, dyn_ctrl_id, temp, hum, light, water)
+                            process_sensor_and_control(p_id, node_id, dyn_ctrl_id, temp, hum, light, water, seq=seq, count=count)
                                 
                     # 4. AGV 로봇이 통신으로 보낸 RFID 태그 인식 이벤트 (0x24)
                     elif msg_type == MSG_RFID_EVENT:
@@ -269,7 +273,7 @@ def handle_hardware_client(client_socket, addr):
                             conn.close()
             
         except ConnectionResetError:
-            print(f"📡 {display_name} 기기 접속 끊김 (Connection Reset)")
+            web_log(f"📡 {display_name} 기기 접속 끊김 (Connection Reset)", "sys")
             break
         except Exception as e:
             print(f"[TCP Server] {display_name} Error: {e}")

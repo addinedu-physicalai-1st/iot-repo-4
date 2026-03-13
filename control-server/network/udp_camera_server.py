@@ -6,13 +6,16 @@ ESP32-CAM UDP 영상 수신 서버
 import socket
 import threading
 import time
+from datetime import datetime
+from core.node_identifier import identify_node
 
 # 전역 상태 - 카메라 ID별로 프레임 관리
 latest_camera_frames = {}          # {camera_id: bytes}
 _camera_frame_locks = {}           # {camera_id: Lock}
 _camera_frame_events = {}          # {camera_id: Event}
 camera_fps = {}                    # {camera_id: float}
-_camera_last_updates = {}          # {camera_id: float}
+_camera_last_updates = {}          # {camera_id: float} (마지막 풀 프레임 수신 시각)
+_camera_last_activity = {}         # {camera_id: float} (마지막 패킷 수신 시각)
 
 # 최소 1x1 회색 JPEG (카메라 미연결 시 placeholder)
 PLACEHOLDER_JPEG = (
@@ -23,13 +26,34 @@ PLACEHOLDER_JPEG = (
 
 
 def _ensure_camera(camera_id):
-    """카메라 ID별 상태 초기화"""
+    """카메라 ID별 상태 초기화 및 접속 로그 출력 (장기간 미수신 후 재수신 시 로그 표시)"""
+    now_t = time.time()
+    
+    # 1. 신규 접속 처리 (메모리에 없는 경우)
     if camera_id not in _camera_frame_locks:
         _camera_frame_locks[camera_id] = threading.Lock()
         _camera_frame_events[camera_id] = threading.Event()
         camera_fps[camera_id] = 0.0
         _camera_last_updates[camera_id] = 0.0
+        _camera_last_activity[camera_id] = now_t
         latest_camera_frames[camera_id] = None
+
+        _, node_id, _ = identify_node(camera_id)
+        zone_info = f" ({node_id} 구역)" if node_id.startswith('S') or node_id in ['I10', 'O99'] else ""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        print(f"[{timestamp}] 📷 [UDP Camera] 새 카메라 접속 확인: ID {camera_id}{zone_info}")
+    
+    # 2. 재접속 처리 (10초 이상 끊겼다가 다시 들어온 경우)
+    else:
+        last_activity = _camera_last_activity.get(camera_id, 0)
+        if (now_t - last_activity) > 10.0:
+            _, node_id, _ = identify_node(camera_id)
+            zone_info = f" ({node_id} 구역)" if node_id.startswith('S') or node_id in ['I10', 'O99'] else ""
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            print(f"[{timestamp}] 📷 [UDP Camera] 카메라 재접속 감지: ID {camera_id}{zone_info}")
+        
+        # 패킷 수신 시각 갱신
+        _camera_last_activity[camera_id] = now_t
 
 
 def get_camera_frame(camera_id):

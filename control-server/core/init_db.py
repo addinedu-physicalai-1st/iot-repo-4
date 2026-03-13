@@ -7,7 +7,7 @@ from database.db_config import get_db_connection
 
 
 def init_base_data():
-    """서버 기동 시 sfam_db의 필수 마스터 데이터를 삽입하여 FK 제약 조건 충돌을 방지합니다."""
+    """서버 기동 시 sfam_db_backup의 필수 마스터 데이터를 삽입하여 FK 제약 조건 충돌을 방지합니다."""
     conn = get_db_connection()
     try:
         with conn.cursor() as c:
@@ -26,7 +26,11 @@ def init_base_data():
             )
             c.execute(
                 "INSERT IGNORE INTO trigger_sources (trigger_id, trigger_code, trigger_name) "
-                "VALUES (1, 'AUTO', '자동 로직')"
+                "VALUES (1, 'AUTO', '자동 로직'), (2, 'MANUAL', '수동 제어')"
+            )
+            c.execute(
+                "INSERT IGNORE INTO action_types (action_type_id, action_code, action_name, target_system) "
+                "VALUES (19, 'MANUAL_CONTROL', '수동 장치 제어', 'NURSERY')"
             )
             c.execute(
                 "INSERT IGNORE INTO agv_status_codes (status_id, status_code, status_name) "
@@ -54,7 +58,7 @@ def init_base_data():
                 "VALUES (1, 1, '기본품종', 22.0, 58.0, 2000.0)"
             )
         conn.commit()
-        print("✅ [DB Init] sfam_db 마스터 데이터 초기화 완료 (FK 방어벽 가동)")
+        print("✅ [DB Init] sfam_db_backup 마스터 데이터 초기화 완료 (FK 방어벽 가동)")
     except Exception as e:
         print(f"⚠️ [DB Init] 초기화 중 에러 발생: {e}")
     finally:

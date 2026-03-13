@@ -5,6 +5,7 @@
 """
 from datetime import datetime, timedelta, timezone
 from database.db_config import get_db_connection
+from core.logger import web_log
 
 # 전역 상태 (이전 상태와 비교하여 변경 시 이벤트 로그)
 previous_states = {'val': {}, 'fan': {}, 'led': {}}
@@ -15,15 +16,55 @@ latest_data = {}
 # 수동 제어 오버라이드 캐시 (대시보드에서 ON/OFF 시 ESP32로 명령 전달)
 manual_overrides = {}
 
+# CLI / 로그 제어 플래그
+log_suppressed = False
+
 # ANSI 색상 코드
 COLOR_RESET = "\033[0m"
 COLOR_YELLOW = "\033[33m" # Standard Yellow
 COLOR_BLUE = "\033[34m"   # Standard Blue
 COLOR_RED = "\033[31m"    # Standard Red
 COLOR_CYAN = "\033[36m"
+COLOR_GRAY = "\033[90m"
 
+def print_node_status(node_id, temp, humi, light, water, led, val, fan, seq=None, count=None, suffix="", source=None):
+    """터미널에 노드 상태를 일관된 포맷으로 출력합니다."""
+    if log_suppressed: return
+    
+    if seq is not None:
+        seq_str = f" [SEQ:{seq}]"
+    else:
+        # 수동 명령의 경우 타임스탬프 기반 ID 생성 (KST 기준)
+        kst_now = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=9)
+        seq_str = f" [CMD:{kst_now.strftime('%Y%m%d-%H%M%S')}]"
+    
+    cnt_str = f" (cnt:{count})" if count is not None else ""
+    water_str = f" | 수위:{water:4.1f}%" if water is not None else ""
+    
+    # 색상 적용
+    disp_led = f"{COLOR_YELLOW}{led}{COLOR_RESET}" if led.endswith("_ON") or (led.startswith("LED_") and any(char.isdigit() for char in led) and "0" not in led) else led
+    disp_val = f"{COLOR_BLUE}{val}{COLOR_RESET}" if val.endswith("_ON") else val
+    disp_fan = f"{COLOR_RED}{fan}{COLOR_RESET}" if fan.endswith("_ON") else fan
+    
+    src_info = f" {COLOR_GRAY}({source}){COLOR_RESET}" if source else ""
+    
+    # 모드 판별 (Latest Data Cache에서 확인)
+    is_manual = False
+    ui_node = node_id.lower()
+    if ui_node in latest_data:
+        m_val = latest_data[ui_node].get('mode', '')
+        if 'OFF' in m_val or 'MANUAL' in m_val: is_manual = True
+    
+    mode_label = f"[{COLOR_GRAY}MANUAL{COLOR_RESET}]" if is_manual else f"[{COLOR_CYAN}AUTO{COLOR_RESET}]"
+    
+    msg = f"📡 [{node_id.upper()}] {'[MANUAL]' if is_manual else '[AUTO]'}{seq_str}{cnt_str} {suffix}온도:{temp:4.1f}℃ | 습도:{humi:4.1f}% | 조도:{light:>4}{water_str} >> 📤 {led}, {val}, {fan}{src_info}"
+    web_log(msg, "sensor")
+    
+    # 터미널용 색상 입힌 출력은 유지 (web_log 내부의 print는 기본 출력이므로 중복 방지를 위해 여기서는 컬러 버전만 직접 출력하거나 조정 필요)
+    # 이미 web_log가 print를 수행하므로, 여기서는 컬러링된 버전만 print하고 web_log는 데이터만 쌓음
+    # print(f"📡 [{node_id.upper()}] {mode_label}{seq_str}{cnt_str} {suffix}온도:{temp:4.1f}℃ | 습도:{humi:4.1f}% | 조도:{light:>4}{water_str} >> 📤 {disp_led}, {disp_val}, {disp_fan}{src_info}")
 
-def process_sensor_and_control(p_id, node_id, dyn_ctrl_id, curr_temp, curr_humi, curr_light, curr_water=0):
+def process_sensor_and_control(p_id, node_id, dyn_ctrl_id, curr_temp, curr_humi, curr_light, curr_water=0, seq=None, count=None):
     """
     신규 스키마의 분리된 센서/구동기 테이블에 데이터를 안전하게 저장하고 제어값을 반환합니다.
     
@@ -104,10 +145,21 @@ def process_sensor_and_control(p_id, node_id, dyn_ctrl_id, curr_temp, curr_humi,
             command_val = "VAL_ON" if (curr_humi if curr_humi is not None else 0) < h_set else "VAL_OFF"
             command_fan = "FAN_ON" if (curr_temp if curr_temp is not None else 0) > t_set else "FAN_OFF"
 
-            # 4-1. 수동 제어 오버라이드 반영
+            # 4-1. 수동 제어 오버라이드 반영 (전체 모드 및 개별 장치)
             ui_node = node_id.lower()
+            is_manual_mode = False
+            
+            # DB/캐시의 전체 모드가 MANUAL인 경우 체크
+            if ui_node in latest_data:
+                m_val = latest_data[ui_node].get('mode', '')
+                if 'OFF' in m_val or 'MANUAL' in m_val: is_manual_mode = True
+
             if ui_node in manual_overrides:
                 override = manual_overrides[ui_node]
+                if 'mode' in override:
+                    is_manual_mode = ('OFF' in override['mode'] or 'MANUAL' in override['mode'])
+                
+                # 수동 모드이거나 개별 오버라이드가 있을 때 적용
                 if 'led' in override: command_led = override['led']
                 if 'val' in override: command_val = override['val']
                 if 'fan' in override: command_fan = override['fan']
@@ -137,29 +189,32 @@ def process_sensor_and_control(p_id, node_id, dyn_ctrl_id, curr_temp, curr_humi,
                         "INSERT INTO nursery_actuator_logs (actuator_id, state_value, trigger_id, logged_at) VALUES (%s, %s, 1, %s)",
                         (a_id, pure_state, kst_now)
                     )
-                    print(f"📝 [이벤트] {node_id} >> {cmd_key.upper()}:{pure_state}")
+                    if not log_suppressed:
+                        web_log(f"📝 [이벤트] {node_id} >> {cmd_key.upper()}:{pure_state}", "event")
 
         conn.commit()
 
         # 6. 로깅 및 캐시 업데이트
         log_suffix = f"({'inbound' if p_id==10 else 'outbound'}) " if p_id in [10, 99] else ""
-        water_str = f" | 수위:{curr_water:4.1f}%" if curr_water is not None else ""
         
-        # 색상 적용 (출력용)
-        disp_led = f"{COLOR_YELLOW}{command_led}{COLOR_RESET}" if command_led.endswith("_ON") else command_led
-        disp_val = f"{COLOR_BLUE}{command_val}{COLOR_RESET}" if command_val.endswith("_ON") else command_val
-        disp_fan = f"{COLOR_RED}{command_fan}{COLOR_RESET}" if command_fan.endswith("_ON") else command_fan
-        
-        print(f"📡 [{node_id}] {log_suffix}온도:{curr_temp:4.1f}℃ | 습도:{curr_humi:4.1f}% | 조도:{curr_light:>4}{water_str} >> 📤 {disp_led}, {disp_val}, {disp_fan}")
+        print_node_status(
+            node_id, curr_temp, curr_humi, curr_light, curr_water, 
+            command_led, command_val, command_fan, 
+            seq=seq, count=count, suffix=log_suffix
+        )
 
-        latest_data[node_id] = {
+        latest_info = {
             "temp": round(curr_temp, 1) if isinstance(curr_temp, (int, float)) else curr_temp,
             "humi": round(curr_humi, 1) if isinstance(curr_humi, (int, float)) else curr_humi,
             "light": curr_light, 
             "water": curr_water,
             "led": command_led, "val": command_val, "fan": command_fan,
-            "last_seen": kst_now.strftime('%H:%M:%S')
+            "mode": "MODE_OFF" if is_manual_mode else "MODE_ON",
+            "last_seen": kst_now.strftime('%H:%M:%S'),
+            "last_updated": kst_now.timestamp() # 타임스탬프 추가
         }
+        latest_data[node_id.upper()] = latest_info
+        latest_data[node_id.lower()] = latest_info
         return command_led, command_val, command_fan
 
     except Exception as e:
@@ -177,13 +232,14 @@ def load_latest_sensor_data_from_db():
     conn = get_db_connection()
     try:
         with conn.cursor() as c:
-            # 모든 육묘장 노드 목록 가져오기
-            c.execute("SELECT node_id FROM nursery_controllers")
+            # 모든 육묘장 노드 목록 가져오기 (control_mode 포함)
+            c.execute("SELECT node_id, control_mode FROM nursery_controllers")
             controllers = c.fetchall()
             
             for ctrl in controllers:
                 node_id = ctrl['node_id'].upper()
                 c_id = ctrl['node_id']
+                ctrl_mode = ctrl.get('control_mode', 1) # 1=AUTO, 0=MANUAL
                 
                 # 센서 최신값 (Temp=1, Humi=2, Light=3)
                 c.execute("""
@@ -232,19 +288,182 @@ def load_latest_sensor_data_from_db():
                         elif a_type == 3: led_state = f"LED_{state_str}"
                 
                 # 캐시 적재
-                if temp or hum or light:
-                    latest_data[node_id] = {
-                        "temp": round(temp, 1) if temp else 0,
-                        "humi": round(hum, 1) if hum else 0,
-                        "light": int(light) if light else 0,
-                        "led": led_state, 
-                        "val": val_state, 
-                        "fan": fan_state,
-                        "last_seen": last_time.strftime('%H:%M:%S') if last_time else datetime.now().strftime('%H:%M:%S')
-                    }
-        print(f"🔄 [DB Init] 육묘장 최신 센서 상태 개수: {len(latest_data)}개 로드 완료")
+                info = {
+                    "temp": round(temp, 1) if temp else 0,
+                    "humi": round(hum, 1) if hum else 0,
+                    "light": int(light) if light else 0,
+                    "led": led_state, 
+                    "val": val_state, 
+                    "fan": fan_state,
+                    "mode": "MODE_ON" if ctrl_mode == 1 else "MODE_OFF",
+                    "last_seen": last_time.strftime('%H:%M:%S') if last_time else datetime.now().strftime('%H:%M:%S')
+                }
+                latest_data[node_id] = info
+                latest_data[node_id.lower()] = info
+
+        print(f"🔄 [DB Init] 육묘장 최신 센서 상태 개수: {len(latest_data)//2}개 로드 완료")
     except Exception as e:
         print(f"⚠️ [DB Init] 캐시 로드 중 에러: {e}")
     finally:
         conn.close()
 
+def log_manual_actuator_to_db(node_id, act_id, state_val):
+    """수동 제어시 액추에이터 상태를 DB에 기록합니다. (trigger_id=2: MANUAL)"""
+    kst_now = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=9)
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # 1. 제어기 ID 찾기 (node_id 기반)
+            cursor.execute("SELECT controller_id FROM nursery_controllers WHERE node_id=%s", (node_id.lower(),))
+            row = cursor.fetchone()
+            if not row: return
+            dyn_ctrl_id = row['controller_id'] if isinstance(row, dict) else row[0]
+
+            # 2. 특별 처리: MODE(0)인 경우 컨트롤러 상태 테이블 업데이트
+            if act_id == 0:
+                cursor.execute(
+                    "UPDATE nursery_controllers SET control_mode=%s WHERE controller_id=%s",
+                    (state_val, dyn_ctrl_id)
+                )
+                conn.commit()
+                return
+
+            # 3. 액추에이터 ID 찾기 또는 생성
+            cursor.execute(
+                "SELECT actuator_id FROM nursery_actuators WHERE controller_id=%s AND actuator_type_id=%s",
+                (dyn_ctrl_id, act_id)
+            )
+            row = cursor.fetchone()
+            if row:
+                a_id = row['actuator_id'] if isinstance(row, dict) else row[0]
+            else:
+                cursor.execute(
+                    "INSERT INTO nursery_actuators (controller_id, actuator_type_id, pin_number) VALUES (%s, %s, 0)",
+                    (dyn_ctrl_id, act_id)
+                )
+                a_id = cursor.lastrowid
+
+            # 3. 로그 기록
+            state_str = "ON" if state_val > 0 else "OFF"
+            if act_id == 4: state_str = f"{state_val}"
+            
+            cursor.execute(
+                "INSERT INTO nursery_actuator_logs (actuator_id, state_value, trigger_id, logged_at) VALUES (%s, %s, 2, %s)",
+                (a_id, state_str, kst_now)
+            )
+        conn.commit()
+    except Exception as e:
+        print(f"⚠️ [DB Manual Log] 실패: {e}")
+    finally:
+        conn.close()
+
+
+def execute_manual_control(node_id, device_key, state_val, trigger=2, source="Terminal"):
+    """
+    웹 GUI와 터미널 CLI의 수동 제어 명령을 하나로 통합 처리하는 중앙 함수입니다.
+    source: 제어 주체 (예: "Terminal" 또는 IP 주소)
+    """
+    from network.tcp_robot_server import active_tcp_connections
+    from network.sfam_protocol import build_packet, MSG_ACTUATOR_CMD, ID_SERVER
+    from network.terminal_cli import log_actuator_packet
+    import struct
+
+    node_id = node_id.upper()
+    device_key = device_key.lower()
+    if device_key == 'pump': device_key = 'val'
+    
+    # 소스 구분에 따른 레이블 (출력용)
+    source_label = "CLI" if source == "Terminal" else "WEB"
+
+    # 1. 메모리 캐시 오버라이드 실시간 업데이트
+    if node_id.lower() not in manual_overrides:
+        manual_overrides[node_id.lower()] = {}
+    
+    cmd_str = f"{device_key.upper()}_{'ON' if state_val > 0 else 'OFF'}"
+    if device_key == 'led': cmd_str = f"LED_{state_val}"
+    
+    manual_overrides[node_id.lower()] = manual_overrides.get(node_id.lower(), {})
+    manual_overrides[node_id.lower()][device_key] = cmd_str
+    
+    if device_key not in previous_states: previous_states[device_key] = {}
+    previous_states[device_key][node_id.upper()] = cmd_str
+    
+    # 캐시 업데이트 (대문자/소문자 모두 갱신하여 UI 연동 보장)
+    for key in [node_id.upper(), node_id.lower()]:
+        if key in latest_data:
+            latest_data[key][device_key] = cmd_str
+            if device_key == 'pump': latest_data[key]['val'] = cmd_str
+
+    # 2. DB 로그 기록
+    act_id = {"mode": 0, "pump": 1, "fan": 2, "heater": 3, "led": 4, "val": 1}.get(device_key)
+    
+    if act_id is not None:
+        log_manual_actuator_to_db(node_id, act_id, state_val)
+        
+        try:
+            import json
+            conn = get_db_connection()
+            kst_now = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=9)
+            with conn.cursor() as cursor:
+                # detail에 source(IP 등) 추가
+                action_detail = {
+                    "node_id": node_id, 
+                    "device": device_key, 
+                    "state": 'ON' if state_val > 0 else 'OFF', 
+                    "val": state_val,
+                    "source": source
+                }
+                user_id = 1 # 임시: admin(1) 사용 (0번 유저 부재 시 FK 방지)
+                
+                cursor.execute("""
+                    INSERT INTO user_action_logs (user_id, action_type_id, target_id, action_detail, action_result, action_time)
+                    VALUES (%s, %s, %s, %s, 1, %s)
+                """, (user_id, 19, node_id, json.dumps(action_detail), kst_now))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"⚠️ [User Action Log] 실패: {e}")
+
+    # 3. 실제 TCP 패킷 전송
+    node_key = node_id.lower()
+    
+    # 디버깅: 현재 연결된 노드들 확인 (개발 단계용)
+    # print(f"DEBUG: Checking {node_key} in {list(active_tcp_connections.keys())}")
+    
+    if node_key in active_tcp_connections:
+        try:
+            num_part = ''.join(filter(str.isdigit, node_id))
+            target_id = int(num_part) + (6 if node_id.startswith('S') else 0)
+            
+            payload = struct.pack('BBBB', act_id, state_val, trigger, 0)
+            packet = build_packet(MSG_ACTUATOR_CMD, ID_SERVER, target_id, 0, payload)
+            
+            # 패킷 상세 로그 (필요 시 유지)
+            # log_actuator_packet(node_id, act_id, state_val, trigger, packet)
+            
+            # 사용자 요청 포맷 출력 (Source 포함)
+            # print(f"✅ [{source_label}] 0x{target_id:02X}({node_id}) >> {device_key.upper()} {state_val} 전송 완료 (Source: {source})")
+            
+            # 📡 통합 포맷으로 즉시 출력하여 가독성 통일
+            cache = latest_data.get(node_id.upper(), latest_data.get(node_id.lower(), {}))
+            print_node_status(
+                node_id, 
+                cache.get('temp', 0), cache.get('humi', 0), cache.get('light', 0), cache.get('water', 0),
+                cmd_str if device_key == 'led' else cache.get('led', 'LED_OFF'),
+                cmd_str if device_key in ['val', 'pump'] else cache.get('val', 'VAL_OFF'),
+                cmd_str if device_key == 'fan' else cache.get('fan', 'FAN_OFF'),
+                source=f"{source_label}:{source}"
+            )
+            
+            # MODE(0)인 경우 state_val이 1(AUTO), 0(MANUAL)임
+            # 패킷 페이로드: [act_id, state_val, trigger, 0]
+            # act_id가 None이면 전송 건너뜀 (안전 장치)
+            if act_id is not None:
+                active_tcp_connections[node_key].sendall(packet)
+            return True, "Success"
+        except Exception as e:
+            return False, str(e)
+    else:
+        # 연결된 노드들 목록을 함께 출력하여 원인 파악 도움
+        connected_nodes = ", ".join(active_tcp_connections.keys()) if active_tcp_connections else "None"
+        return False, f"Node {node_id} not connected (Connected: {connected_nodes})"

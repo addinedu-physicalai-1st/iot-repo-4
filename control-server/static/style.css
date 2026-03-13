@@ -11,11 +11,19 @@
     --track-line: #30363d;
     --node-bg: #161b22;
     --node-active: #42d392;
+
+    /* Responsive Font Sizes */
+    --fs-base: clamp(12px, 1.2vw, 14px);
+    --fs-h1: clamp(16px, 2vw, 20px);
+    --fs-h2: clamp(14px, 1.5vw, 16px);
+    --fs-node-label: clamp(9px, 1vw, 11px);
+    --fs-env-data: clamp(10px, 1.1vw, 13.5px);
 }
 
 body {
     margin: 0;
     font-family: 'Inter', sans-serif;
+    font-size: var(--fs-base);
     background-color: var(--bg-color);
     color: var(--text-primary);
     overflow-x: hidden;
@@ -55,7 +63,7 @@ body {
 }
 
 .logo h1 {
-    font-size: 20px;
+    font-size: var(--fs-h1);
     margin: 0;
     background: linear-gradient(90deg, #42d392, #647eff);
     background-clip: text;
@@ -116,6 +124,124 @@ body {
     background: rgba(248, 81, 73, 0.1);
 }
 
+.btn-edit-toggle {
+    background: rgba(88, 166, 255, 0.1);
+    color: var(--accent-blue);
+    border: 1px solid rgba(88, 166, 255, 0.3);
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: 0.2s;
+    margin-right: 10px;
+}
+
+.btn-edit-toggle:hover {
+    background: rgba(88, 166, 255, 0.2);
+}
+
+.btn-edit-toggle.active {
+    background: var(--accent-blue);
+    color: white;
+}
+
+/* Edit Mode Global State */
+body.edit-mode .track-node,
+body.edit-mode .floating-camera,
+body.edit-mode .legend,
+body.edit-mode .action-footer {
+    cursor: move !important;
+    outline: 2px dashed #ffab00 !important;
+    outline-offset: 4px;
+    z-index: 9999 !important;
+}
+
+body.edit-mode .track-node:hover,
+body.edit-mode .floating-camera:hover,
+body.edit-mode .legend:hover,
+body.edit-mode .action-footer:hover {
+    background: rgba(255, 171, 0, 0.1) !important;
+}
+
+/* Resize Handle */
+.resize-handle {
+    display: none;
+    position: absolute;
+    background: #ffab00;
+    z-index: 10000;
+}
+
+body.edit-mode .resize-handle {
+    display: block;
+}
+
+.resize-handle.top {
+    top: -5px;
+    left: 0;
+    width: 100%;
+    height: 10px;
+    cursor: ns-resize;
+}
+
+.resize-handle.bottom {
+    bottom: -5px;
+    left: 0;
+    width: 100%;
+    height: 10px;
+    cursor: ns-resize;
+}
+
+.resize-handle.right {
+    right: -5px;
+    top: 0;
+    width: 10px;
+    height: 100%;
+    cursor: ew-resize;
+}
+
+.resize-handle.left {
+    left: -5px;
+    top: 0;
+    width: 10px;
+    height: 100%;
+    cursor: ew-resize;
+}
+
+.resize-handle.corner {
+    bottom: -5px;
+    right: -5px;
+    width: 15px;
+    height: 15px;
+    cursor: nwse-resize;
+    background: #ffab00;
+    border-radius: 50%;
+    border: 2px solid #000;
+}
+
+/* Footer should be floating in edit mode or when moved */
+body.edit-mode .action-footer {
+    position: absolute;
+    bottom: 20px;
+}
+
+/* Legend should be absolute when moved */
+.legend {
+    display: flex;
+    gap: 15px;
+    z-index: 5;
+}
+
+body.edit-mode .legend {
+    position: absolute;
+}
+
+/* Gold Save Button */
+.btn-footer.gold {
+    background: linear-gradient(135deg, #ffab00, #ff8c00);
+    color: #0d1117;
+    border: none;
+}
+
 /* Panels (Glassmorphism) */
 .panel {
     background: var(--panel-bg);
@@ -141,7 +267,7 @@ body {
 }
 
 .panel-header h2 {
-    font-size: 16px;
+    font-size: var(--fs-h2);
     margin: 0;
     color: #fff;
 }
@@ -175,6 +301,35 @@ body {
     padding: 12px;
     cursor: pointer;
     transition: all 0.2s ease;
+}
+
+.env-node.storage-node {
+    position: absolute;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 수동 모드일 때 시각적 강조 */
+.env-node.manual-mode-active {
+    background: rgba(255, 171, 0, 0.15) !important;
+    border: 1px solid rgba(255, 171, 0, 0.5) !important;
+    box-shadow: 0 0 15px rgba(255, 171, 0, 0.2);
+}
+
+.env-node.manual-mode-active::before {
+    content: "MANUAL";
+    position: absolute;
+    bottom: -15px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #ffab00;
+    color: #0d1117;
+    font-size: 8px;
+    font-weight: bold;
+    padding: 2px 4px;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    white-space: nowrap;
 }
 
 .node-card:hover {
@@ -213,17 +368,159 @@ body {
 
 .track-panel {
     position: relative;
-    height: 100%;
 }
 
+/* Main Map Container */
 .track-container {
-    height: calc(100% - 40px);
+    flex-grow: 1;
     position: relative;
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(0, 0, 0, 0.5);
     border-radius: 12px;
     border: 1px inset rgba(255, 255, 255, 0.05);
-    margin-bottom: 0;
-    overflow: visible;
+    overflow: hidden; /* Only the wrapper should scroll */
+    display: flex;
+    flex-direction: column;
+}
+
+/* Scroll Wrapper */
+.track-scroll-container {
+    flex-grow: 1;
+    overflow: auto; /* Enable both X and Y scrolling */
+    background: radial-gradient(circle at center, #1a1f26 0%, #0d1117 100%);
+    position: relative;
+    padding: 40px;
+}
+
+/* Fixed size content for scrolling */
+.track-content-wrapper {
+    width: 1000px;
+    height: 600px;
+    position: relative;
+    margin: auto; /* Center if container is larger */
+}
+
+/* Action Footer */
+.action-footer {
+    height: 80px;
+    margin-top: 15px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 15px 20px;
+    border-top: 1px solid var(--panel-border);
+    background: rgba(13, 17, 23, 0.9) !important;
+}
+
+.action-container {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+    max-width: 1200px;
+    justify-content: center;
+}
+
+.btn-footer {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+/* System Terminal Log UI */
+.system-log-display {
+    width: 100%;
+    margin-top: 15px;
+    background: #000;
+    border-radius: 8px;
+    border: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-grow: 1;
+}
+
+.terminal-header {
+    background: #222;
+    padding: 5px 12px;
+    font-size: 11px;
+    color: #888;
+    font-family: 'Courier New', Courier, monospace;
+    border-bottom: 1px solid #333;
+}
+
+.terminal-body {
+    padding: 10px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 12px;
+    color: #42d392;
+    overflow-y: auto;
+    max-height: 100%;
+    line-height: 1.4;
+    text-align: left;
+}
+
+.log-line {
+    margin-bottom: 4px;
+    word-break: break-all;
+    white-space: pre-wrap;
+}
+
+.log-line.sys { color: #58a6ff; }
+.log-line.event { color: #ffab00; }
+.log-line.sensor { color: #42d392; height: 1.2em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-line .time { color: #8b949e; margin-right: 8px; font-weight: normal; }
+
+.btn-footer.action {
+    background: var(--accent-blue);
+    color: white;
+}
+
+.btn-footer.green {
+    background: var(--accent-green);
+}
+
+.btn-footer.blue {
+    background: #005cc5;
+}
+
+.btn-footer.secondary {
+    background: #30363d;
+    color: var(--text-primary);
+}
+
+.btn-footer.danger {
+    background: rgba(248, 81, 73, 0.15);
+    color: #f85149;
+    border-color: rgba(248, 81, 73, 0.4);
+}
+
+.btn-footer:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.2);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Reposition Floating Camera in bottom left of the scroll view */
+.floating-camera {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    width: 240px;
+    background: rgba(13, 17, 23, 0.9);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    overflow: hidden;
+    z-index: 100;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(10px);
 }
 
 .track-node {
@@ -246,7 +543,7 @@ body {
     top: -25px;
     left: 50%;
     transform: translateX(-50%);
-    font-size: 11px;
+    font-size: var(--fs-node-label);
     color: var(--text-secondary);
     white-space: nowrap;
     pointer-events: none;
@@ -264,6 +561,7 @@ body {
     font-size: 28px;
 }
 
+/* Node grouping for storage/env nodes */
 .track-node.storage-node {
     width: 48px;
     height: 48px;
@@ -275,97 +573,9 @@ body {
 }
 
 .track-node.storage-node::after {
-    top: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 14px;
+    top: -30px;
+    font-size: 11px;
     font-weight: 700;
-    color: rgba(255, 255, 255, 0.9);
-    background: transparent;
-    padding: 0;
-}
-
-/* Specific Node Positions (Approximated map logic mapped to percentages) */
-#node-a01 {
-    left: 10%;
-    top: 50%;
-}
-
-/* Inbound */
-#node-a02 {
-    left: 40%;
-    top: 50%;
-}
-
-#node-a03 {
-    left: 60%;
-    top: 50%;
-}
-
-#node-a04 {
-    left: 90%;
-    top: 50%;
-}
-
-/* Outbound */
-
-#node-s11 {
-    left: 20%;
-    top: 10%;
-}
-
-#node-s12 {
-    left: 40%;
-    top: 10%;
-}
-
-#node-s13 {
-    left: 60%;
-    top: 10%;
-}
-
-#node-s05 {
-    left: 20%;
-    top: 30%;
-}
-
-#node-s06 {
-    left: 40%;
-    top: 30%;
-}
-
-#node-s07 {
-    left: 60%;
-    top: 30%;
-}
-
-#node-r08 {
-    left: 40%;
-    top: 70%;
-}
-
-#node-r09 {
-    left: 60%;
-    top: 70%;
-}
-
-#node-r10 {
-    left: 80%;
-    top: 70%;
-}
-
-#node-r14 {
-    left: 40%;
-    top: 90%;
-}
-
-#node-r15 {
-    left: 60%;
-    top: 90%;
-}
-
-#node-r16 {
-    left: 80%;
-    top: 90%;
 }
 
 /* Env bubble above nodes */
@@ -378,9 +588,9 @@ body {
     border: 1px solid rgba(88, 166, 255, 0.5);
     backdrop-filter: blur(5px);
     border-radius: 8px;
-    padding: 14px 18px;
-    font-size: 16px;
-    line-height: 1.6;
+    padding: clamp(6px, 1vw, 12px) clamp(8px, 1.2vw, 16px);
+    font-size: var(--fs-env-data);
+    line-height: 1.4;
     white-space: nowrap;
     color: var(--text-secondary);
     pointer-events: auto;
@@ -456,18 +666,19 @@ body {
 /* AGV Marker */
 .agv-marker {
     position: absolute;
-    width: 50px;
-    height: 50px;
-    background: rgba(88, 166, 255, 0.2);
+    width: 60px;
+    height: 60px;
+    background: rgba(88, 166, 255, 0.15);
     border: 3px solid var(--accent-blue);
-    border-radius: 8px;
+    border-radius: 12px;
     transform: translate(-50%, -50%);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 10;
-    transition: left 1s ease-in-out, top 1s ease-in-out;
-    box-shadow: 0 0 15px rgba(88, 166, 255, 0.4);
+    transition: all 0.5s ease;
+    box-shadow: 0 0 20px rgba(88, 166, 255, 0.4);
+    pointer-events: none;
     font-size: 28px;
 }
 
@@ -1016,29 +1227,87 @@ input:checked+.slider:before {
     border-radius: 12px;
 }
 
+
 /* Mobile & Tablet Responsive Layout */
 @media (max-width: 1100px) {
     .main-grid {
-        grid-template-columns: 1fr;
+        display: flex;
+        flex-direction: column;
         height: auto;
+        padding: 10px;
     }
 
     .track-container {
-        min-height: 550px;
+        min-height: clamp(500px, 80vh, 700px);
+        margin-bottom: 20px;
     }
 
     .panel {
         height: auto;
+        margin-bottom: 15px;
     }
 
     /* Enlarge bubbles slightly for mobile touch */
     .track-node {
-        width: 40px;
-        height: 40px;
+        width: 28px;
+        height: 28px;
+    }
+
+    .track-node.station {
+        width: 50px;
+        height: 50px;
+        font-size: 22px;
     }
 
     .track-node.storage-node {
-        width: 56px;
-        height: 56px;
+        width: 44px;
+        height: 44px;
+    }
+    
+    .env-data {
+        padding: 4px 8px;
+        line-height: 1.2;
+    }
+}
+
+/* Very Small Mobile */
+@media (max-width: 600px) {
+    .top-nav {
+        padding: 5px 15px;
+    }
+    
+    .nav-actions {
+        gap: 8px;
+    }
+    
+    .server-status {
+        display: none;
+    }
+    
+    .logo h1 {
+        font-size: 14px;
+    }
+    
+    .floating-camera {
+        width: 160px;
+        bottom: 10px;
+        left: 10px;
+    }
+    
+    .floating-controls {
+        left: auto;
+        right: 10px;
+        bottom: 10px;
+        width: 140px;
+    }
+    
+    .floating-controls .btn {
+        font-size: 11px !important;
+        padding: 8px !important;
+    }
+    
+    .env-data {
+        transform: translate(10px, -50%);
+        font-size: 10px;
     }
 }
