@@ -722,45 +722,21 @@ void RobotNetworkManager::executeInboundPickup() {
   Serial.println("  ★ 입고 픽업 시퀀스 시작");
   Serial.println("======================================");
 
-  // 1. U턴 (180도 회전)
-  Serial.println("[입고 1/6] U턴 실행...");
-  _motorController.goForward();
-  delay(150);
-  _motorController.uTurnRight();
-  delay(350);
-  // U턴 후 라인 안착 대기
-  int s1, s2, s3, s4, s5;
-  // 1. 회전 시작 초기 딜레이 (0.3초 동안 센서 무시하고 그냥 무조건 돎)
-  delay(300);
-
-  // 2. 가짜 선 1개 통과하기 (선 밟기 -> 탈출하기)
-  // 1) 가짜 선 밟을 때 대기
-  while (true) {
-    _motorController.readSensors(s1, s2, s3, s4, s5);
-    if (s3 == 1 || s4 == 1 || s2 == 1)
-      break;
-    delay(5);
+  // 1. U턴 (180도 회전) - U턴 테스트 버튼과 100% 동일한 코드 경로 사용
+  //    LineFollower에 경로 "U"를 넣고 실행 → executeCrossroadCommand의 UTURN 케이스 사용
+  Serial.println("[입고 1/6] U턴 실행 (U턴 테스트와 동일 경로)...");
+  {
+    int nodeSeq[1] = {_lineFollower.getCurrentNodeIndex()};
+    _lineFollower.setPath("U", nodeSeq, 1);
+    _lineFollower.start();
+    // U턴이 완료될 때까지 대기 (update 루프)
+    while (_lineFollower.isRunning()) {
+      _lineFollower.update();
+      delay(5);
+    }
+    _motorController.stop();
+    delay(500);
   }
-  delay(50); // 노이즈 마진
-
-  // 2) 가짜 선 완전히 벗어날 때까지 대기
-  while (true) {
-    _motorController.readSensors(s1, s2, s3, s4, s5);
-    if (s1 == 0 && s2 == 0 && s3 == 0 && s4 == 0 && s5 == 0)
-      break;
-    delay(5);
-  }
-  delay(80); // 가짜 선 탈출 후 다음 선(진짜 선) 감지까지의 노이즈 마진
-
-  // 3. 진짜 선 (다음 선) 안착 대기 (180도)
-  while (true) {
-    _motorController.readSensors(s1, s2, s3, s4, s5);
-    if (s3 == 1 && (s2 == 1 || s4 == 1))
-      break;
-    delay(5);
-  }
-  _motorController.stop();
-  delay(500);
   Serial.println("[입고 1/6] U턴 완료!");
 
   // 2. 암 내리기 (CW 180도 - 팔 뻗기)

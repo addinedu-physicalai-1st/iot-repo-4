@@ -148,6 +148,12 @@ public:
     /** @brief 센서 값 조회 (디버깅/상태 전송용) */
     void getSensorValues(int& s1, int& s2, int& s3, int& s4, int& s5) const;
 
+    /**
+     * @brief U턴 수행 (외부 호출용 - executeInboundPickup 등)
+     *        교차로 위에서 호출. stop 상태에서 시작해야 함.
+     */
+    void performUturn();
+
 private:
     // ─────────── 내부 로직 ───────────
 

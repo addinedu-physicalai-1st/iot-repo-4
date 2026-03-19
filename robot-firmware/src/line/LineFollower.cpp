@@ -278,7 +278,7 @@ void LineFollower::executeCrossroadCommand() {
             _state = RobotState::FINDING_RIGHT;
             _currentDir = (_currentDir + 1) % 4;
             if (_pathNodeCount > 0 && _currentStep + 1 < _pathNodeCount) {
-                _currentIdx = _pathNodeSeq[_currentStep + 1];
+                _currentIdx = _pathNodeSeq[_currentStep + 1];00..
                 _nodeName = getRealNodeName(_currentIdx);
             }
             _motor.goForward();
@@ -300,7 +300,7 @@ void LineFollower::executeCrossroadCommand() {
             _motor.goForward();
             delay(150);
             _motor.uTurnRight();
-            delay(350);
+            delay(800);
             waitForLineAfterUturn();
             break;
         }
@@ -466,7 +466,7 @@ void LineFollower::waitForLineAfterUturn() {
     // 2) 가짜 선 완전히 벗어날 때까지 대기
     while (true) {
         _motor.readSensors(s1, s2, s3, s4, s5);
-        if (s1 == 0 && s2 == 0 && s3 == 0 && s4 == 0 && s5 == 0) break;
+        if (s4 == 1 || s3 ==1 || s2 ==1 ) break;
         delay(5);
     }
     delay(80); // 가짜 선 탈출 후 다음 선(진짜 선) 감지까지의 노이즈 마진
@@ -491,4 +491,21 @@ void LineFollower::getSensorValues(int& s1, int& s2, int& s3, int& s4, int& s5) 
     s3 = _s3;
     s4 = _s4;
     s5 = _s5;
+}
+
+// ============================================================
+//  외부 호출용 U턴 (executeInboundPickup 등에서 사용)
+//  ★ executeCrossroadCommand의 UTURN 케이스와 100% 동일한 코드
+// ============================================================
+
+void LineFollower::performUturn() {
+    Serial.println("[LineFollower] performUturn() 실행");
+    _motor.goForward();
+    delay(150);
+    _motor.uTurnRight();
+    delay(800);
+    waitForLineAfterUturn();
+    _motor.stop();
+    delay(500);
+    Serial.println("[LineFollower] performUturn() 완료");
 }
